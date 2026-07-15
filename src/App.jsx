@@ -176,6 +176,11 @@ function App() {
   const [editSweeper, setEditSweeper] = useState('');
   const [editMapUrl, setEditMapUrl] = useState('');
   
+  const [editMekanikName, setEditMekanikName] = useState('');
+  const [editMekanikWa, setEditMekanikWa] = useState('');
+  const [editSweeperName, setEditSweeperName] = useState('');
+  const [editSweeperWa, setEditSweeperWa] = useState('');
+  
   // Single text inputs for Google Maps URL or raw coordinates
   const [editDestGmapsInput, setEditDestGmapsInput] = useState('');
   const [parsedDestCoords, setParsedDestCoords] = useState(null);
@@ -266,6 +271,12 @@ function App() {
       setEditRoadCaptain(eventDetails.road_captain || '');
       setEditSweeper(eventDetails.sweeper || '');
       setEditMapUrl(eventDetails.map_embed_url || '');
+      
+      const c = eventDetails.contacts || INITIAL_EVENT.contacts;
+      setEditMekanikName(c?.mekanik?.name || '');
+      setEditMekanikWa(c?.mekanik?.whatsapp || '');
+      setEditSweeperName(c?.sweeper?.name || '');
+      setEditSweeperWa(c?.sweeper?.whatsapp || '');
       
       const lat = eventDetails.map_destination_lat;
       const lng = eventDetails.map_destination_lng;
@@ -970,7 +981,11 @@ function App() {
             sweeper: editSweeper.trim(),
             map_embed_url: editMapUrl.trim(),
             map_destination_lat: lat,
-            map_destination_lng: lng
+            map_destination_lng: lng,
+            contacts: {
+              mekanik: { name: editMekanikName.trim(), whatsapp: editMekanikWa.trim() },
+              sweeper: { name: editSweeperName.trim(), whatsapp: editSweeperWa.trim() }
+            }
           })
           .eq('id', eventDetails.id);
 
@@ -1335,25 +1350,27 @@ function App() {
   return (
     <div className="app-container">
       {/* Database Mode Indicator */}
-      <div 
-        style={{ 
-          fontSize: '0.75rem', 
-          padding: '4px 8px', 
-          backgroundColor: isSupabaseConfigured ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', 
-          borderBottom: `1px solid ${isSupabaseConfigured ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`,
-          borderRadius: '4px',
-          marginBottom: '10px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px'
-        }}
-      >
-        <Database style={{ width: '12px', color: isSupabaseConfigured ? 'var(--success)' : 'var(--warning)' }} />
-        <span>
-          Mode: <strong>{isSupabaseConfigured ? 'Supabase Online (Database Aktif)' : 'Local Offline (Demo/Fallback)'}</strong>
-        </span>
-      </div>
+      {isAdmin && (
+        <div 
+          style={{ 
+            fontSize: '0.75rem', 
+            padding: '4px 8px', 
+            backgroundColor: isSupabaseConfigured ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', 
+            borderBottom: `1px solid ${isSupabaseConfigured ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`,
+            borderRadius: '4px',
+            marginBottom: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px'
+          }}
+        >
+          <Database style={{ width: '12px', color: isSupabaseConfigured ? 'var(--success)' : 'var(--warning)' }} />
+          <span>
+            Mode: <strong>{isSupabaseConfigured ? 'Supabase Online (Database Aktif)' : 'Local Offline (Demo/Fallback)'}</strong>
+          </span>
+        </div>
+      )}
 
       {/* Header Banner */}
       <header className="card card-primary" style={{ padding: '16px', marginBottom: '16px', borderTop: 'none' }}>
@@ -2278,6 +2295,49 @@ function App() {
                           </div>
                         </div>
 
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div className="form-group">
+                            <label className="form-label">Responden Darurat (Mekanik)</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="Nama"
+                              value={editMekanikName}
+                              onChange={(e) => setEditMekanikName(e.target.value)}
+                              disabled={loading}
+                              style={{ marginBottom: '8px' }}
+                            />
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="WhatsApp (ex: 62812...)"
+                              value={editMekanikWa}
+                              onChange={(e) => setEditMekanikWa(e.target.value)}
+                              disabled={loading}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Responden Darurat (Sweeper)</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="Nama"
+                              value={editSweeperName}
+                              onChange={(e) => setEditSweeperName(e.target.value)}
+                              disabled={loading}
+                              style={{ marginBottom: '8px' }}
+                            />
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder="WhatsApp (ex: 62812...)"
+                              value={editSweeperWa}
+                              onChange={(e) => setEditSweeperWa(e.target.value)}
+                              disabled={loading}
+                            />
+                          </div>
+                        </div>
+
                         <div className="form-group">
                           <label className="form-label">Google My Maps Embed URL (Iframe src)</label>
                           <input 
@@ -2641,16 +2701,16 @@ function App() {
                   onClick={() => setSosContact('mekanik')}
                   style={{ padding: '8px' }}
                 >
-                  <strong>Mekanik Konvoi</strong>
-                  <span style={{ fontSize: '0.7rem' }}>Pak Eko</span>
+                  <strong>{eventDetails?.contacts?.mekanik?.name || INITIAL_EVENT.contacts.mekanik.name}</strong>
+                  <span style={{ fontSize: '0.7rem' }}>WA: {eventDetails?.contacts?.mekanik?.whatsapp || INITIAL_EVENT.contacts.mekanik.whatsapp}</span>
                 </div>
                 <div 
                   className={`radio-card ${sosContact === 'sweeper' ? 'selected' : ''}`}
                   onClick={() => setSosContact('sweeper')}
                   style={{ padding: '8px' }}
                 >
-                  <strong>Sweeper Utama</strong>
-                  <span style={{ fontSize: '0.7rem' }}>Dani</span>
+                  <strong>{eventDetails?.contacts?.sweeper?.name || INITIAL_EVENT.contacts.sweeper.name}</strong>
+                  <span style={{ fontSize: '0.7rem' }}>WA: {eventDetails?.contacts?.sweeper?.whatsapp || INITIAL_EVENT.contacts.sweeper.whatsapp}</span>
                 </div>
               </div>
             </div>

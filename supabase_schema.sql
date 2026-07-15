@@ -24,6 +24,7 @@ create table events (
   map_embed_url text not null,
   map_destination_lat double precision not null,
   map_destination_lng double precision not null,
+  contacts jsonb default '{"mekanik": {"name": "Pak Eko (Mekanik)", "whatsapp": "6281234567890"}, "sweeper": {"name": "Dani (Sweeper)", "whatsapp": "6281298765432"}}'::jsonb,
   created_at timestamptz default now()
 );
 
