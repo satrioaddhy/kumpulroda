@@ -70,6 +70,10 @@ create table participants (
   motor_type text not null,
   ride_status text check (ride_status in ('solo', 'boncengan')) default 'solo' not null,
   bike_ready boolean default false not null,
+  latitude double precision,
+  longitude double precision,
+  last_seen_at timestamptz,
+  sos_active boolean default false not null,
   created_at timestamptz default now()
 );
 

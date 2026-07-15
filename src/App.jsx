@@ -85,6 +85,13 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+const formatLastSeen = (isoString) => {
+  if (!isoString) return 'Tidak aktif';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return 'Tidak aktif';
+  return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
+};
+
 function App() {
   const isSupabaseConfigured = 
     import.meta.env.VITE_SUPABASE_URL && 
@@ -374,6 +381,45 @@ function App() {
     };
   }, [isMockGps]);
 
+  // --- REAL-TIME GPS SYNC TO SUPABASE ---
+  useEffect(() => {
+    if (!isSupabaseConfigured || !myRsvp) return;
+
+    // Avoid syncing if coordinates are defaults
+    if (gpsCoords.lat === -6.2425 && gpsCoords.lng === 106.8622) return;
+
+    const lastSyncTime = parseInt(localStorage.getItem('kr_last_gps_sync') || '0', 10);
+    const now = Date.now();
+
+    // Throttle: sync at most once every 15 seconds unless SOS is active
+    if (now - lastSyncTime < 15000 && !myRsvp.sos_active) {
+      return;
+    }
+
+    const syncGps = async () => {
+      try {
+        const { error } = await supabase
+          .from('participants')
+          .update({
+            latitude: gpsCoords.lat,
+            longitude: gpsCoords.lng,
+            last_seen_at: new Date().toISOString()
+          })
+          .eq('id', myRsvp.id);
+
+        if (error) {
+          console.warn('Gagal sinkronisasi GPS ke database:', error.message);
+        } else {
+          localStorage.setItem('kr_last_gps_sync', now.toString());
+        }
+      } catch (err) {
+        console.error('Error syncing GPS:', err);
+      }
+    };
+
+    syncGps();
+  }, [gpsCoords, myRsvp?.id, myRsvp?.sos_active, isSupabaseConfigured]);
+
   // Fetch all state from Supabase
   const fetchDataFromSupabase = async () => {
     try {
@@ -508,6 +554,10 @@ function App() {
           motor_type: p.motor_type,
           ride_status: p.ride_status,
           bike_ready: p.bike_ready,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          last_seen_at: p.last_seen_at,
+          sos_active: p.sos_active,
           check_ins: pCheckins
         };
       });
@@ -525,7 +575,11 @@ function App() {
             whatsapp: foundUser.whatsapp,
             motor_type: foundUser.motor_type,
             ride_status: foundUser.ride_status,
-            bike_ready: foundUser.bike_ready
+            bike_ready: foundUser.bike_ready,
+            latitude: foundUser.latitude,
+            longitude: foundUser.longitude,
+            last_seen_at: foundUser.last_seen_at,
+            sos_active: foundUser.sos_active
           });
 
           const rawChecklist = participantsData.find(p => p.id === storedRsvpId)?.bike_checklists;
@@ -931,8 +985,34 @@ function App() {
   };
 
   // SOS Redirection
-  const triggerSos = () => {
+  const triggerSos = async () => {
     setIsSosOpen(false);
+
+    // Update SOS state in DB instantly
+    if (isSupabaseConfigured && myRsvp) {
+      try {
+        await supabase
+          .from('participants')
+          .update({
+            sos_active: true,
+            latitude: gpsCoords.lat,
+            longitude: gpsCoords.lng,
+            last_seen_at: new Date().toISOString()
+          })
+          .eq('id', myRsvp.id);
+
+        setMyRsvp(prev => ({ ...prev, sos_active: true }));
+        await fetchDataFromSupabase();
+      } catch (err) {
+        console.error('Gagal mengaktifkan SOS di DB:', err);
+      }
+    } else if (myRsvp) {
+      setMyRsvp(prev => ({ ...prev, sos_active: true }));
+      const updatedList = participants.map(p => p.id === myRsvp.id ? { ...p, sos_active: true, latitude: gpsCoords.lat, longitude: gpsCoords.lng, last_seen_at: new Date().toISOString() } : p);
+      setParticipants(updatedList);
+      localStorage.setItem('kr_participants', JSON.stringify(updatedList));
+    }
+
     const targetContact = eventDetails.contacts ? eventDetails.contacts[sosContact] : INITIAL_EVENT.contacts[sosContact];
     const mapsLink = `https://maps.google.com/?q=${gpsCoords.lat},${gpsCoords.lng}`;
     
@@ -1397,6 +1477,59 @@ function App() {
       {/* Main Panel Content */}
       <main>
         
+        {/* Active SOS Warning for Member */}
+        {myRsvp && myRsvp.sos_active && (
+          <div 
+            className="card" 
+            style={{ 
+              backgroundColor: 'rgba(239, 68, 68, 0.12)', 
+              border: '2px solid var(--danger)', 
+              padding: '16px', 
+              borderRadius: 'var(--radius-lg)',
+              marginBottom: '16px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)', fontWeight: 'bold' }}>
+              <ShieldAlert className="sos-pulse-icon" style={{ animation: 'pulse-dot 1s infinite' }} />
+              <span>STATUS DARURAT (SOS) ANDA AKTIF</span>
+            </div>
+            <p style={{ fontSize: '0.85rem', margin: 0, color: 'var(--text-secondary)' }}>
+              Koordinat GPS Anda ({gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}) sedang dipantau secara real-time oleh panitia konvoi. Tetap tenang dan tepikan motor Anda di tempat yang aman.
+            </p>
+            <button 
+              className="btn btn-success" 
+              onClick={async () => {
+                if (isSupabaseConfigured) {
+                  try {
+                    await supabase
+                      .from('participants')
+                      .update({ sos_active: false })
+                      .eq('id', myRsvp.id);
+                    setMyRsvp(prev => ({ ...prev, sos_active: false }));
+                    await fetchDataFromSupabase();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                } else {
+                  setMyRsvp(prev => ({ ...prev, sos_active: false }));
+                  const updatedList = participants.map(p => p.id === myRsvp.id ? { ...p, sos_active: false } : p);
+                  setParticipants(updatedList);
+                  localStorage.setItem('kr_participants', JSON.stringify(updatedList));
+                }
+                alert('Status darurat dinonaktifkan.');
+              }}
+              style={{ width: 'fit-content', minHeight: '36px' }}
+            >
+              SAYA SUDAH AMAN (MATIKAN SOS)
+            </button>
+          </div>
+        )}
+
         {/* --- TAB 1: INFO HUB (DASHBOARD) --- */}
         {activeTab === 'dashboard' && (
           <div>
@@ -2102,6 +2235,14 @@ function App() {
                         height: '36px', 
                         fontSize: '0.85rem', 
                         padding: 0,
+                    <button 
+                      className="btn" 
+                      style={{ 
+                        flex: 1, 
+                        minHeight: '36px', 
+                        height: '36px', 
+                        fontSize: '0.85rem', 
+                        padding: 0,
                         background: adminSubTab === 'manifest' ? 'var(--primary)' : 'transparent',
                         color: adminSubTab === 'manifest' ? '#fff' : 'var(--text-secondary)',
                         boxShadow: 'none'
@@ -2109,6 +2250,22 @@ function App() {
                       onClick={() => setAdminSubTab('manifest')}
                     >
                       Manifes Peserta
+                    </button>
+                    <button 
+                      className="btn" 
+                      style={{ 
+                        flex: 1, 
+                        minHeight: '36px', 
+                        height: '36px', 
+                        fontSize: '0.85rem', 
+                        padding: 0,
+                        background: adminSubTab === 'sos' ? 'var(--primary)' : 'transparent',
+                        color: adminSubTab === 'sos' ? '#fff' : 'var(--text-secondary)',
+                        boxShadow: 'none'
+                      }}
+                      onClick={() => setAdminSubTab('sos')}
+                    >
+                      Pantau GPS & SOS
                     </button>
                     <button 
                       className="btn" 
@@ -2129,7 +2286,7 @@ function App() {
                   </div>
 
                   {adminSubTab === 'manifest' && (
-                    <div className="counters-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: 0 }}>
+                    <div className="counters-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: 0 }}>
                       <div className="counter-box" style={{ padding: '8px 4px' }}>
                         <div className="counter-value" style={{ fontSize: '1.25rem' }}>{totalMotor}</div>
                         <div className="counter-label" style={{ fontSize: '0.6rem' }}>Motor</div>
@@ -2149,6 +2306,20 @@ function App() {
                           {participants.filter(p => p.check_ins && Object.keys(p.check_ins).length > 0).length}
                         </div>
                         <div className="counter-label" style={{ fontSize: '0.6rem' }}>Check-in</div>
+                      </div>
+                      <div 
+                        className="counter-box" 
+                        style={{ 
+                          padding: '8px 4px', 
+                          border: participants.filter(p => p.sos_active).length > 0 ? '1px solid var(--danger)' : '1px solid var(--border-color)',
+                          backgroundColor: participants.filter(p => p.sos_active).length > 0 ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
+                          animation: participants.filter(p => p.sos_active).length > 0 ? 'pulse-border-red 1.5s infinite' : 'none'
+                        }}
+                      >
+                        <div className="counter-value" style={{ fontSize: '1.25rem', color: participants.filter(p => p.sos_active).length > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                          {participants.filter(p => p.sos_active).length}
+                        </div>
+                        <div className="counter-label" style={{ fontSize: '0.6rem', color: participants.filter(p => p.sos_active).length > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>SOS Aktif</div>
                       </div>
                     </div>
                   )}
@@ -2208,6 +2379,139 @@ function App() {
                       <button className="btn btn-secondary" onClick={handleResetData} style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
                         Setel Ulang Semua Data (Hanya Mode Demo)
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub Tab C: PANTAU GPS & SOS */}
+                {adminSubTab === 'sos' && (
+                  <div className="card" style={{ padding: '16px 12px' }}>
+                    <h3 style={{ fontSize: '1.05rem', marginBottom: '16px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Compass style={{ color: 'var(--primary)' }} /> Pantau GPS & Sinyal Darurat (SOS)
+                    </h3>
+
+                    {/* SOS Aktif Section */}
+                    <div style={{ marginBottom: '24px' }}>
+                      <h4 style={{ fontSize: '0.9rem', color: 'var(--danger)', marginBottom: '10px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <ShieldAlert style={{ width: '16px' }} /> LAPORAN DARURAT (SOS AKTIF)
+                      </h4>
+                      {participants.filter(p => p.sos_active).length === 0 ? (
+                        <div style={{ padding: '16px', backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--success)', textAlign: 'center' }}>
+                          🟢 Semua peserta aman. Tidak ada laporan darurat saat ini.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {participants.filter(p => p.sos_active).map(p => {
+                            const mapUrl = p.latitude && p.longitude 
+                              ? `https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}` 
+                              : '#';
+                            return (
+                              <div key={p.id} className="card" style={{ border: '2px solid var(--danger)', padding: '14px', backgroundColor: 'rgba(239, 68, 68, 0.05)', textAlign: 'left' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                                  <div>
+                                    <strong style={{ fontSize: '1rem', color: 'var(--danger)' }}>{p.name}</strong>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                      Motor: {p.motor_type} | WA: +{p.whatsapp}
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                      Koordinat: {p.latitude?.toFixed(6) || 'N/A'}, {p.longitude?.toFixed(6) || 'N/A'}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '4px', fontWeight: 'bold' }}>
+                                      Terakhir Dilihat: {formatLastSeen(p.last_seen_at)}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    {p.latitude && p.longitude && (
+                                      <a 
+                                        href={mapUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="btn btn-primary"
+                                        style={{ fontSize: '0.8rem', padding: '6px 12px', minHeight: '32px' }}
+                                      >
+                                        Mulai Navigasi
+                                      </a>
+                                    )}
+                                    <button 
+                                      className="btn btn-success"
+                                      onClick={async () => {
+                                        if (isSupabaseConfigured) {
+                                          await supabase
+                                            .from('participants')
+                                            .update({ sos_active: false })
+                                            .eq('id', p.id);
+                                          await fetchDataFromSupabase();
+                                        } else {
+                                          const updatedList = participants.map(part => part.id === p.id ? { ...part, sos_active: false } : part);
+                                          setParticipants(updatedList);
+                                          localStorage.setItem('kr_participants', JSON.stringify(updatedList));
+                                        }
+                                        alert(`Status SOS ${p.name} dinonaktifkan.`);
+                                      }}
+                                      style={{ fontSize: '0.8rem', padding: '6px 12px', minHeight: '32px' }}
+                                    >
+                                      Selesaikan
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* All Active Participants GPS Section */}
+                    <div>
+                      <h4 style={{ fontSize: '0.9rem', marginBottom: '10px', textAlign: 'left', color: 'var(--primary)' }}>
+                        Lokasi Terakhir Seluruh Anggota Konvoi
+                      </h4>
+                      <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                        <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                              <th style={{ padding: '8px' }}>Peserta</th>
+                              <th style={{ padding: '8px' }}>Terakhir Aktif</th>
+                              <th style={{ padding: '8px' }}>Koordinat</th>
+                              <th style={{ padding: '8px', textAlign: 'right' }}>Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {participants.map(p => {
+                              const hasLocation = p.latitude && p.longitude;
+                              return (
+                                <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                  <td style={{ padding: '8px' }}>
+                                    <strong>{p.name}</strong>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{p.motor_type}</div>
+                                  </td>
+                                  <td style={{ padding: '8px' }}>
+                                    {formatLastSeen(p.last_seen_at)}
+                                  </td>
+                                  <td style={{ padding: '8px', fontFamily: 'monospace' }}>
+                                    {hasLocation ? `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}` : '-'}
+                                  </td>
+                                  <td style={{ padding: '8px', textAlign: 'right' }}>
+                                    {hasLocation ? (
+                                      <a 
+                                        href={`https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="badge badge-primary"
+                                        style={{ display: 'inline-block', textDecoration: 'none' }}
+                                      >
+                                        Buka Peta
+                                      </a>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-muted)' }}>Tidak ada sinyal</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 )}
