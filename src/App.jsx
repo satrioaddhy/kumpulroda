@@ -20,10 +20,56 @@ import {
   Lock,
   Mail,
   Trash2,
-  Plus
+  Plus,
+  Camera,
+  Image
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import './App.css';
+
+// --- UTILITY: COMPRESS IMAGE ---
+const compressImage = (file, maxWidth = 300, maxHeight = 300, quality = 0.7) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        canvas.toBlob(
+          (blob) => {
+            resolve(blob);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 // --- DATA SEED BAWAAN / FALLBACK (MOCK DATA) ---
 const INITIAL_EVENT = {
@@ -141,6 +187,8 @@ function App() {
   const [rsvpWa, setRsvpWa] = useState('');
   const [rsvpMotor, setRsvpMotor] = useState('');
   const [rsvpStatus, setRsvpStatus] = useState('solo');
+  const [rsvpAvatarFile, setRsvpAvatarFile] = useState(null);
+  const [rsvpAvatarPreview, setRsvpAvatarPreview] = useState(null);
   const [formError, setFormError] = useState('');
 
   // --- GMAPS INPUT PARSER FUNCTION ---
@@ -752,16 +800,51 @@ function App() {
 
     if (isSupabaseConfigured) {
       try {
+        let avatarUrl = myRsvp ? myRsvp.avatar_url : null;
+
+        // Upload Avatar if file exists
+        if (rsvpAvatarFile) {
+          try {
+            setFormError('Mengunggah foto...');
+            const compressedBlob = await compressImage(rsvpAvatarFile, 300, 300, 0.8);
+            const ext = rsvpAvatarFile.name.split('.').pop() || 'jpg';
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+            
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('avatars')
+              .upload(fileName, compressedBlob, {
+                contentType: compressedBlob.type,
+                upsert: true
+              });
+              
+            if (uploadError) {
+              console.warn('Gagal upload avatar:', uploadError);
+            } else if (uploadData) {
+              const { data: publicUrlData } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(fileName);
+              
+              avatarUrl = publicUrlData.publicUrl;
+            }
+          } catch (err) {
+            console.warn('Gagal memproses gambar:', err);
+          }
+        }
+        setFormError('');
+
         if (myRsvp) {
           // UPDATE
+          const updateData = {
+            name: rsvpName.trim(),
+            whatsapp: formattedWa,
+            motor_type: rsvpMotor.trim(),
+            ride_status: rsvpStatus
+          };
+          if (avatarUrl) updateData.avatar_url = avatarUrl;
+
           const { error } = await supabase
             .from('participants')
-            .update({
-              name: rsvpName.trim(),
-              whatsapp: formattedWa,
-              motor_type: rsvpMotor.trim(),
-              ride_status: rsvpStatus
-            })
+            .update(updateData)
             .eq('id', myRsvp.id);
 
           if (error) throw error;
@@ -774,7 +857,8 @@ function App() {
               name: rsvpName.trim(),
               whatsapp: formattedWa,
               motor_type: rsvpMotor.trim(),
-              ride_status: rsvpStatus
+              ride_status: rsvpStatus,
+              avatar_url: avatarUrl
             }])
             .select();
 
@@ -1733,6 +1817,36 @@ function App() {
                 )}
 
                 <form onSubmit={handleRsvpSubmit}>
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '24px' }}>
+                    <div style={{
+                      width: '80px', height: '80px', borderRadius: '50%', backgroundColor: 'var(--bg-secondary)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                      border: '2px dashed var(--border-color)', marginBottom: '8px', position: 'relative'
+                    }}>
+                      {rsvpAvatarPreview || (myRsvp && myRsvp.avatar_url) ? (
+                        <img src={rsvpAvatarPreview || myRsvp.avatar_url} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <Camera style={{ color: 'var(--text-secondary)' }} size={32} />
+                      )}
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        disabled={loading}
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setRsvpAvatarFile(file);
+                            setRsvpAvatarPreview(URL.createObjectURL(file));
+                          }
+                        }}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                      />
+                    </div>
+                    <label className="form-label" style={{ textAlign: 'center', margin: 0 }}>
+                      Foto Profil (Opsional)
+                    </label>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Klik untuk ambil foto / galeri</span>
+                  </div>
                   <div className="form-group">
                     <label className="form-label">Nama Lengkap</label>
                     <input 
@@ -2337,9 +2451,18 @@ function App() {
                         <tbody>
                           {participants.map((p) => (
                             <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: myRsvp && p.id === myRsvp.id ? 'rgba(255,123,0,0.05)' : 'transparent' }}>
-                              <td style={{ fontWeight: '600' }}>
-                                {p.name}
-                                {myRsvp && p.id === myRsvp.id && <span style={{ color: 'var(--primary)', fontSize: '0.7rem', marginLeft: '4px' }}>(Anda)</span>}
+                              <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {p.avatar_url ? (
+                                  <img src={p.avatar_url} alt="Avatar" className="avatar-thumbnail" />
+                                ) : (
+                                  <div className="avatar-thumbnail" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <User style={{ color: 'var(--text-muted)' }} size={20} />
+                                  </div>
+                                )}
+                                <div>
+                                  {p.name}
+                                  {myRsvp && p.id === myRsvp.id && <span style={{ color: 'var(--primary)', fontSize: '0.7rem', marginLeft: '4px' }}>(Anda)</span>}
+                                </div>
                               </td>
                               <td>{p.motor_type} <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>({p.ride_status})</span></td>
                               <td>
@@ -2473,9 +2596,18 @@ function App() {
                               const hasLocation = p.latitude && p.longitude;
                               return (
                                 <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                  <td style={{ padding: '8px' }}>
-                                    <strong>{p.name}</strong>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{p.motor_type}</div>
+                                  <td style={{ padding: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {p.avatar_url ? (
+                                      <img src={p.avatar_url} alt="Avatar" className="avatar-thumbnail" />
+                                    ) : (
+                                      <div className="avatar-thumbnail" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}>
+                                        <User style={{ color: 'var(--text-muted)' }} size={16} />
+                                      </div>
+                                    )}
+                                    <div>
+                                      <strong>{p.name}</strong>
+                                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{p.motor_type}</div>
+                                    </div>
                                   </td>
                                   <td style={{ padding: '8px' }}>
                                     {formatLastSeen(p.last_seen_at)}

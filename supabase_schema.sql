@@ -74,6 +74,7 @@ create table participants (
   longitude double precision,
   last_seen_at timestamptz,
   sos_active boolean default false not null,
+  avatar_url text,
   created_at timestamptz default now()
 );
 
@@ -139,7 +140,7 @@ create policy "Emergency contacts are readable by everyone" on emergency_contact
 create policy "Participants are readable by everyone" on participants for select using (true);
 create policy "Anyone can insert a participant" on participants for insert with check (true);
 create policy "Anyone can update their participant record" on participants for update using (true);
-create policy "Only admin can delete participants" on participants for delete using (auth.role() = 'authenticated');
+create policy "Anyone can delete their participant record" on participants for delete using (true);
 
 -- Kebijakan untuk tabel BIKE_CHECKLISTS (Setiap peserta bisa baca dan update checklistnya sendiri/anonim)
 create policy "Checklists are readable by everyone" on bike_checklists for select using (true);
@@ -236,3 +237,26 @@ where participant_id in (
 insert into check_ins (participant_id, checkpoint_id, latitude, longitude, checked_in_at) values
 ('10000000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', -6.3774, 107.2994, now() - interval '8 hours'),
 ('10000000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', -6.3775, 107.2995, now() - interval '8 hours' - interval '7 minutes');
+
+-- =========================================================================
+-- STORAGE BUCKET: AVATARS
+-- Jalankan kode di bawah ini jika Supabase Storage Anda sudah aktif
+-- =========================================================================
+
+-- Membuat bucket 'avatars' (public)
+insert into storage.buckets (id, name, public) 
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+-- RLS untuk tabel storage.objects (Bucket Avatars)
+create policy "Avatar images are publicly accessible." 
+on storage.objects for select using (bucket_id = 'avatars');
+
+create policy "Anyone can upload an avatar." 
+on storage.objects for insert with check (bucket_id = 'avatars');
+
+create policy "Anyone can update their avatar." 
+on storage.objects for update using (bucket_id = 'avatars');
+
+create policy "Anyone can delete their avatar." 
+on storage.objects for delete using (bucket_id = 'avatars');

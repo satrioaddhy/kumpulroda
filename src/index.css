@@ -723,6 +723,16 @@ h1, h2, h3, h4, h5, h6 {
   animation: pulse-dot 1.5s infinite;
 }
 
+.avatar-thumbnail {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background-color: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  flex-shrink: 0;
+}
+
 @keyframes pulse-dot {
   0% {
     transform: scale(0.95);
