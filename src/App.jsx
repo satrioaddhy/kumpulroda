@@ -2235,14 +2235,6 @@ function App() {
                         height: '36px', 
                         fontSize: '0.85rem', 
                         padding: 0,
-                    <button 
-                      className="btn" 
-                      style={{ 
-                        flex: 1, 
-                        minHeight: '36px', 
-                        height: '36px', 
-                        fontSize: '0.85rem', 
-                        padding: 0,
                         background: adminSubTab === 'manifest' ? 'var(--primary)' : 'transparent',
                         color: adminSubTab === 'manifest' ? '#fff' : 'var(--text-secondary)',
                         boxShadow: 'none'
