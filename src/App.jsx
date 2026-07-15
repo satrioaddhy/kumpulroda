@@ -1350,7 +1350,7 @@ function App() {
   return (
     <div className="app-container">
       {/* Database Mode Indicator */}
-      {isAdmin && (
+      {isAdminLoggedIn && (
         <div 
           style={{ 
             fontSize: '0.75rem', 
