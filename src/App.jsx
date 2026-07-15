@@ -108,7 +108,7 @@ function App() {
   
   // Geolocation & Mock GPS States
   const [gpsCoords, setGpsCoords] = useState({ lat: -6.2425, lng: 106.8622 });
-  const [isMockGps, setIsMockGps] = useState(true); 
+  const [isMockGps, setIsMockGps] = useState(false); 
   const [gpsStatusText, setGpsStatusText] = useState('Simulasi Aktif');
   
   // Admin Navigation / Views
