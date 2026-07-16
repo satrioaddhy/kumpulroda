@@ -1528,7 +1528,7 @@ function App() {
         </thead>
         <tbody>
           {participants.map((p) => (
-            <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: myRsvp && p.id === myRsvp.id ? 'rgba(255,123,0,0.05)' : 'transparent' }}>
+            <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: myRsvp && p.id === myRsvp.id ? 'var(--primary-glow)' : 'transparent' }}>
               <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {p.avatar_url ? (
                   <img src={p.avatar_url} alt="Avatar" className="avatar-thumbnail" />
@@ -2277,7 +2277,7 @@ function App() {
                         {isCheckedIn ? (
                           <span className="badge badge-success">Telah Check-in</span>
                         ) : (
-                          <span className={`badge ${inRadius ? 'badge-primary' : 'badge-secondary'}`} style={{ border: 'none', background: inRadius ? 'rgba(255,123,0,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                          <span className={`badge ${inRadius ? 'badge-primary' : 'badge-secondary'}`} style={{ border: 'none', background: inRadius ? 'var(--primary-glow)' : 'rgba(255,255,255,0.05)' }}>
                             {inRadius ? 'Siap Check-in' : 'Belum Check-in'}
                           </span>
                         )}

@@ -1,25 +1,25 @@
 /* CSS Variables & Design Tokens */
 :root {
-  --bg-base: #0a0c10;
-  --bg-surface: #141822;
-  --bg-surface-elevated: #1e2433;
-  --border-color: #2a3347;
-  --border-glow: #3b4866;
+  --bg-base: #141a1c;
+  --bg-surface: #243033;
+  --bg-surface-elevated: #3a4b4e;
+  --border-color: #4f6466;
+  --border-glow: #647b7d;
   
-  --primary: #ff7b00; /* Electric Orange for Biker Vibe */
-  --primary-hover: #ff9130;
-  --primary-glow: rgba(255, 123, 0, 0.25);
+  --primary: #d8bf9a; /* Sand/Beige from Logo */
+  --primary-hover: #ecd5b1;
+  --primary-glow: rgba(216, 191, 154, 0.25);
   
-  --success: #10b981; /* Emerald Green */
-  --success-glow: rgba(16, 185, 129, 0.2);
-  --danger: #ef4444; /* SOS Red */
-  --danger-glow: rgba(239, 68, 68, 0.35);
-  --warning: #f59e0b; /* Amber */
-  --info: #3b82f6; /* Blue */
+  --success: #4a8b66; /* Muted Green */
+  --success-glow: rgba(74, 139, 102, 0.2);
+  --danger: #c54a4a; /* Muted Red */
+  --danger-glow: rgba(197, 74, 74, 0.35);
+  --warning: #d6983a; /* Muted Amber */
+  --info: #487b9e; /* Muted Blue */
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #f5f1e6;
+  --text-secondary: #b3b0a7;
+  --text-muted: #828a8c;
   
   --font-heading: 'Outfit', sans-serif;
   --font-body: 'Plus Jakarta Sans', sans-serif;
@@ -206,8 +206,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary) 0%, #e06000 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--primary) 0%, #bca17c 100%);
+  color: #141a1c;
   box-shadow: 0 4px 14px var(--primary-glow);
 }
 
