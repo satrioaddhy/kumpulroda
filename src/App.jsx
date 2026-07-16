@@ -1596,23 +1596,30 @@ function App() {
 
       {/* Header Banner */}
       <header className="card card-primary" style={{ padding: '16px', marginBottom: '16px', borderTop: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
+          <div style={{ flex: 1, zIndex: 2 }}>
             <span className="badge badge-primary" style={{ marginBottom: '6px' }}>Dashboard</span>
             <h1 style={{ fontSize: '1.25rem', fontWeight: '800' }}>Halo Ngegasss</h1>
           </div>
-          {myRsvp ? (
-            <div style={{ textAlign: 'right' }}>
-              <div className="text-muted-desc">Status Anda</div>
-              <span className={`badge ${myRsvp.bike_ready ? 'badge-success' : 'badge-warning'}`}>
-                {myRsvp.bike_ready ? 'Ready to Ride' : 'Belum Siap'}
-              </span>
-            </div>
-          ) : (
-            <button className="badge badge-danger" onClick={() => setActiveTab('rsvp')} style={{ border: '1px solid var(--danger)', cursor: 'pointer' }}>
-              Belum RSVP
-            </button>
-          )}
+
+          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src="/logo.png" alt="Logo" style={{ height: '64px', objectFit: 'contain' }} />
+          </div>
+
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', zIndex: 2 }}>
+            {myRsvp ? (
+              <div style={{ textAlign: 'right' }}>
+                <div className="text-muted-desc">Status Anda</div>
+                <span className={`badge ${myRsvp.bike_ready ? 'badge-success' : 'badge-warning'}`}>
+                  {myRsvp.bike_ready ? 'Ready to Ride' : 'Belum Siap'}
+                </span>
+              </div>
+            ) : (
+              <button className="badge badge-danger" onClick={() => setActiveTab('rsvp')} style={{ border: '1px solid var(--danger)', cursor: 'pointer' }}>
+                Belum RSVP
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
