@@ -75,7 +75,8 @@ const compressImage = (file, maxWidth = 300, maxHeight = 300, quality = 0.7) => 
 const INITIAL_EVENT = {
   id: '11111111-1111-1111-1111-111111111111',
   name: 'Bandung Rideout: KumpulRoda Klub Motor',
-  event_date: '2026-07-18T06:00:00+07:00',
+  event_date: '2026-07-18',
+  event_end_date: '2026-07-19',
   time_label: '06.00 WIB - Selesai',
   meeting_point: 'SPBU Pertamina Pasti Pas, MT Haryono Jakarta',
   road_captain: 'Roni (Honda ADV 160)',
@@ -225,6 +226,7 @@ function App() {
   // --- EDIT EVENT & CHECKPOINT FIELDS (ADMIN) ---
   const [editEventName, setEditEventName] = useState('');
   const [editEventDate, setEditEventDate] = useState('');
+  const [editEventDateEnd, setEditEventDateEnd] = useState('');
   const [editEventTime, setEditEventTime] = useState('');
   const [editMeetingPoint, setEditMeetingPoint] = useState('');
   const [editRoadCaptain, setEditRoadCaptain] = useState('');
@@ -319,8 +321,8 @@ function App() {
   useEffect(() => {
     if (eventDetails) {
       setEditEventName(eventDetails.name || '');
-      // Format ISO string to display in datetime-local if necessary, or keep as string
-      setEditEventDate(eventDetails.event_date ? eventDetails.event_date.substring(0, 16) : '');
+      setEditEventDate(eventDetails.event_date ? eventDetails.event_date.split('T')[0] : '');
+      setEditEventDateEnd(eventDetails.event_end_date ? eventDetails.event_end_date.split('T')[0] : '');
       setEditEventTime(eventDetails.time_label || '');
       setEditMeetingPoint(eventDetails.meeting_point || '');
       setEditRoadCaptain(eventDetails.road_captain || '');
@@ -489,6 +491,7 @@ function App() {
           id: INITIAL_EVENT.id,
           name: INITIAL_EVENT.name,
           event_date: INITIAL_EVENT.event_date,
+          event_end_date: INITIAL_EVENT.event_end_date,
           meeting_point: INITIAL_EVENT.meeting_point,
           road_captain: INITIAL_EVENT.road_captain,
           sweeper: INITIAL_EVENT.sweeper,
@@ -1115,7 +1118,6 @@ function App() {
   };
 
   // --- SAVE EVENT DETAILS (ADMIN ACTION) ---
-  // --- SAVE EVENT DETAILS (ADMIN ACTION) ---
   const handleSaveEventDetails = async (e) => {
     e.preventDefault();
     setSettingsError('');
@@ -1141,7 +1143,8 @@ function App() {
           .from('events')
           .update({
             name: editEventName.trim(),
-            event_date: new Date(editEventDate).toISOString(),
+            event_date: editEventDate,
+            event_end_date: editEventDateEnd,
             meeting_point: editMeetingPoint.trim(),
             road_captain: editRoadCaptain.trim(),
             sweeper: editSweeper.trim(),
@@ -1170,6 +1173,7 @@ function App() {
         ...eventDetails,
         name: editEventName.trim(),
         event_date: editEventDate,
+        event_end_date: editEventDateEnd,
         meeting_point: editMeetingPoint.trim(),
         road_captain: editRoadCaptain.trim(),
         sweeper: editSweeper.trim(),
@@ -1697,10 +1701,19 @@ function App() {
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <Calendar style={{ width: '18px', color: 'var(--text-secondary)' }} />
                   <div>
-                    {isNaN(Date.parse(eventDetails.event_date)) 
-                      ? eventDetails.event_date 
-                      : new Date(eventDetails.event_date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                    }
+                    {eventDetails.event_date && eventDetails.event_end_date ? (
+                      <span>
+                        {new Date(eventDetails.event_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} 
+                        {' - '}
+                        {new Date(eventDetails.event_end_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </span>
+                    ) : (
+                      <span>
+                        {isNaN(Date.parse(eventDetails.event_date)) 
+                          ? eventDetails.event_date 
+                          : new Date(eventDetails.event_date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -2686,14 +2699,24 @@ function App() {
                           />
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                           <div className="form-group">
-                            <label className="form-label">Waktu Mulai Acara</label>
+                            <label className="form-label">Tanggal Mulai</label>
                             <input 
-                              type="datetime-local" 
+                              type="date" 
                               className="form-input" 
                               value={editEventDate}
                               onChange={(e) => setEditEventDate(e.target.value)}
+                              disabled={loading}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Tanggal Selesai</label>
+                            <input 
+                              type="date" 
+                              className="form-input" 
+                              value={editEventDateEnd}
+                              onChange={(e) => setEditEventDateEnd(e.target.value)}
                               disabled={loading}
                             />
                           </div>
