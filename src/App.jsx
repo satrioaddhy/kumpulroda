@@ -1144,7 +1144,6 @@ function App() {
           .update({
             name: editEventName.trim(),
             event_date: editEventDate,
-            time_label: editEventTime.trim(),
             meeting_point: editMeetingPoint.trim(),
             road_captain: editRoadCaptain.trim(),
             sweeper: editSweeper.trim(),
@@ -1174,7 +1173,6 @@ function App() {
         ...eventDetails,
         name: editEventName.trim(),
         event_date: editEventDate,
-        time_label: editEventTime.trim(),
         meeting_point: editMeetingPoint.trim(),
         road_captain: editRoadCaptain.trim(),
         sweeper: editSweeper.trim(),
@@ -1721,10 +1719,6 @@ function App() {
                       </span>
                     )}
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <Clock style={{ width: '18px', color: 'var(--text-secondary)' }} />
-                  <div>{eventDetails.time_label}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                   <MapPin style={{ width: '18px', color: 'var(--text-secondary)', flexShrink: 0, marginTop: '2px' }} />
@@ -2705,7 +2699,7 @@ function App() {
                           />
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div className="form-group">
                             <label className="form-label">Tanggal Mulai</label>
                             <input 
@@ -2723,17 +2717,6 @@ function App() {
                               className="form-input" 
                               value={editEventDateEnd}
                               onChange={(e) => setEditEventDateEnd(e.target.value)}
-                              disabled={loading}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">Teks Jam (Rundown)</label>
-                            <input 
-                              type="text" 
-                              className="form-input" 
-                              placeholder="06.00 WIB - Selesai"
-                              value={editEventTime}
-                              onChange={(e) => setEditEventTime(e.target.value)}
                               disabled={loading}
                             />
                           </div>
