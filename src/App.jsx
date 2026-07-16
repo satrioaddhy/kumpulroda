@@ -606,6 +606,7 @@ function App() {
           longitude: p.longitude,
           last_seen_at: p.last_seen_at,
           sos_active: p.sos_active,
+          avatar_url: p.avatar_url,
           check_ins: pCheckins
         };
       });
@@ -627,7 +628,8 @@ function App() {
             latitude: foundUser.latitude,
             longitude: foundUser.longitude,
             last_seen_at: foundUser.last_seen_at,
-            sos_active: foundUser.sos_active
+            sos_active: foundUser.sos_active,
+            avatar_url: foundUser.avatar_url
           });
 
           const rawChecklist = participantsData.find(p => p.id === storedRsvpId)?.bike_checklists;
