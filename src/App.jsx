@@ -1513,6 +1513,62 @@ function App() {
     alert(`Lokasi simulasi diset ke: ${name}`);
   };
 
+  const renderManifestTable = () => (
+    <div className="admin-table-container">
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Nama</th>
+            <th>Motor</th>
+            <th>Kelayakan</th>
+            {checkpointsList.map((cp, idx) => (
+              <th key={cp.id}>Check-in CP {idx + 1}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {participants.map((p) => (
+            <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: myRsvp && p.id === myRsvp.id ? 'rgba(255,123,0,0.05)' : 'transparent' }}>
+              <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {p.avatar_url ? (
+                  <img src={p.avatar_url} alt="Avatar" className="avatar-thumbnail" />
+                ) : (
+                  <div className="avatar-thumbnail" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <User style={{ color: 'var(--text-muted)' }} size={20} />
+                  </div>
+                )}
+                <div>
+                  {p.name}
+                  {myRsvp && p.id === myRsvp.id && <span style={{ color: 'var(--primary)', fontSize: '0.7rem', marginLeft: '4px' }}>(Anda)</span>}
+                </div>
+              </td>
+              <td>{p.motor_type} <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>({p.ride_status})</span></td>
+              <td>
+                <span className={`badge ${p.bike_ready ? 'badge-success' : 'badge-warning'}`} style={{ textTransform: 'none', padding: '2px 6px', fontSize: '0.7rem' }}>
+                  {p.bike_ready ? '✔ Ready to Ride' : '✘ Belum Siap'}
+                </span>
+              </td>
+              {checkpointsList.map((cp) => {
+                const checkinTime = p.check_ins && p.check_ins[cp.id];
+                return (
+                  <td key={cp.id}>
+                    {checkinTime ? (
+                      <span style={{ color: 'var(--success)', fontWeight: '600' }}>
+                        ✔ {new Date(checkinTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>-</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div className="app-container">
       {/* Database Mode Indicator */}
@@ -1955,6 +2011,14 @@ function App() {
                     {loading ? 'MEMBATALKAN...' : 'Batalkan Pendaftaran (RSVP)'}
                   </button>
                 </div>
+              </div>
+            )}
+            
+            {/* Manifest Table for Participant Dashboard (Visible only if registered) */}
+            {myRsvp && (
+              <div className="card" style={{ padding: '16px 12px', marginTop: '16px' }}>
+                <h3 style={{ fontSize: '1.05rem', marginBottom: '12px', textAlign: 'left' }}>Status Keseluruhan Peserta</h3>
+                {renderManifestTable()}
               </div>
             )}
           </div>
@@ -2438,59 +2502,7 @@ function App() {
                   <div className="card" style={{ padding: '16px 12px' }}>
                     <h3 style={{ fontSize: '1.05rem', marginBottom: '12px', textAlign: 'left' }}>Manifes & Kelayakan Peserta</h3>
                     
-                    <div className="admin-table-container">
-                      <table className="admin-table">
-                        <thead>
-                          <tr>
-                            <th>Nama</th>
-                            <th>Motor</th>
-                            <th>Kelayakan</th>
-                            {checkpointsList.map((cp, idx) => (
-                              <th key={cp.id}>Check-in CP {idx + 1}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {participants.map((p) => (
-                            <tr key={p.id} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: myRsvp && p.id === myRsvp.id ? 'rgba(255,123,0,0.05)' : 'transparent' }}>
-                              <td style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {p.avatar_url ? (
-                                  <img src={p.avatar_url} alt="Avatar" className="avatar-thumbnail" />
-                                ) : (
-                                  <div className="avatar-thumbnail" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <User style={{ color: 'var(--text-muted)' }} size={20} />
-                                  </div>
-                                )}
-                                <div>
-                                  {p.name}
-                                  {myRsvp && p.id === myRsvp.id && <span style={{ color: 'var(--primary)', fontSize: '0.7rem', marginLeft: '4px' }}>(Anda)</span>}
-                                </div>
-                              </td>
-                              <td>{p.motor_type} <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>({p.ride_status})</span></td>
-                              <td>
-                                <span className={`badge ${p.bike_ready ? 'badge-success' : 'badge-warning'}`} style={{ textTransform: 'none', padding: '2px 6px', fontSize: '0.7rem' }}>
-                                  {p.bike_ready ? '✔ Ready to Ride' : '✘ Belum Siap'}
-                                </span>
-                              </td>
-                              {checkpointsList.map((cp) => {
-                                const checkinTime = p.check_ins && p.check_ins[cp.id];
-                                return (
-                                  <td key={cp.id}>
-                                    {checkinTime ? (
-                                      <span style={{ color: 'var(--success)', fontWeight: '600' }}>
-                                        ✔ {new Date(checkinTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                                      </span>
-                                    ) : (
-                                      <span style={{ color: 'var(--text-muted)' }}>-</span>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {renderManifestTable()}
 
                     <div style={{ marginTop: '20px' }}>
                       <button className="btn btn-secondary" onClick={handleResetData} style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
