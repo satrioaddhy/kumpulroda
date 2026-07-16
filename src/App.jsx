@@ -1126,6 +1126,14 @@ function App() {
   // --- SAVE EVENT DETAILS (ADMIN ACTION) ---
   const handleSaveEventDetails = async (e) => {
     e.preventDefault();
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     setSettingsError('');
     setLoading(true);
 
@@ -1201,6 +1209,14 @@ function App() {
   // --- ADD CHECKPOINT (ADMIN ACTION) ---
   const handleAddCheckpoint = async (e) => {
     e.preventDefault();
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     setCheckpointError('');
 
     if (!newCpName.trim() || !newCpGmapsInput.trim()) {
@@ -1268,6 +1284,14 @@ function App() {
 
   // --- DELETE CHECKPOINT (ADMIN ACTION) ---
   const handleDeleteCheckpoint = async (id) => {
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     const confirmDel = window.confirm('Apakah Anda yakin ingin menghapus checkpoint ini?');
     if (!confirmDel) return;
 
@@ -1300,6 +1324,14 @@ function App() {
   // --- ADD RUNDOWN (ADMIN ACTION) ---
   const handleAddRundown = async (e) => {
     e.preventDefault();
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     setRundownError('');
 
     if (!newRdTime.trim() || !newRdTitle.trim() || !newRdDesc.trim()) {
@@ -1353,6 +1385,14 @@ function App() {
 
   // --- DELETE RUNDOWN (ADMIN ACTION) ---
   const handleDeleteRundown = async (id) => {
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     const confirmDel = window.confirm('Apakah Anda yakin ingin menghapus item rundown ini?');
     if (!confirmDel) return;
 
@@ -1392,6 +1432,14 @@ function App() {
   // --- SAVE EDIT RUNDOWN (ADMIN ACTION) ---
   const handleSaveEditRundown = async (e) => {
     e.preventDefault();
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     setRundownError('');
 
     if (!editRdTime.trim() || !editRdTitle.trim() || !editRdDesc.trim()) {
@@ -1487,6 +1535,14 @@ function App() {
   };
 
   const handleResetData = async () => {
+    if (isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
+        setIsAdminLoggedIn(false);
+        return;
+      }
+    }
     const confirmReset = window.confirm('Apakah Anda yakin ingin menyetel ulang semua data?');
     if (!confirmReset) return;
 
@@ -2185,7 +2241,7 @@ function App() {
             ) : (
               <div>
                 {/* Simulated GPS Debug Control Panel */}
-                {isAdmin && (
+                {isAdminLoggedIn && (
                   <div className="debug-panel">
                     <div className="debug-title">
                       <Sliders style={{ width: '16px' }} /> Panel Simulasi GPS (Mock GPS)
