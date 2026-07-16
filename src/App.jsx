@@ -322,7 +322,8 @@ function App() {
     if (eventDetails) {
       setEditEventName(eventDetails.name || '');
       setEditEventDate(eventDetails.event_date ? eventDetails.event_date.split('T')[0] : '');
-      setEditEventDateEnd(eventDetails.event_end_date ? eventDetails.event_end_date.split('T')[0] : '');
+      const endDt = eventDetails.event_end_date || eventDetails.contacts?.event_end_date;
+      setEditEventDateEnd(endDt ? endDt.split('T')[0] : '');
       setEditEventTime(eventDetails.time_label || '');
       setEditMeetingPoint(eventDetails.meeting_point || '');
       setEditRoadCaptain(eventDetails.road_captain || '');
@@ -491,7 +492,6 @@ function App() {
           id: INITIAL_EVENT.id,
           name: INITIAL_EVENT.name,
           event_date: INITIAL_EVENT.event_date,
-          event_end_date: INITIAL_EVENT.event_end_date,
           meeting_point: INITIAL_EVENT.meeting_point,
           road_captain: INITIAL_EVENT.road_captain,
           sweeper: INITIAL_EVENT.sweeper,
@@ -1144,7 +1144,7 @@ function App() {
           .update({
             name: editEventName.trim(),
             event_date: editEventDate,
-            event_end_date: editEventDateEnd,
+            time_label: editEventTime.trim(),
             meeting_point: editMeetingPoint.trim(),
             road_captain: editRoadCaptain.trim(),
             sweeper: editSweeper.trim(),
@@ -1153,7 +1153,8 @@ function App() {
             map_destination_lng: lng,
             contacts: {
               mekanik: { name: editMekanikName.trim(), whatsapp: editMekanikWa.trim() },
-              sweeper: { name: editSweeperName.trim(), whatsapp: editSweeperWa.trim() }
+              sweeper: { name: editSweeperName.trim(), whatsapp: editSweeperWa.trim() },
+              event_end_date: editEventDateEnd
             }
           })
           .eq('id', eventDetails.id);
@@ -1173,13 +1174,18 @@ function App() {
         ...eventDetails,
         name: editEventName.trim(),
         event_date: editEventDate,
-        event_end_date: editEventDateEnd,
+        time_label: editEventTime.trim(),
         meeting_point: editMeetingPoint.trim(),
         road_captain: editRoadCaptain.trim(),
         sweeper: editSweeper.trim(),
         map_embed_url: editMapUrl.trim(),
         map_destination_lat: lat,
-        map_destination_lng: lng
+        map_destination_lng: lng,
+        contacts: {
+          mekanik: { name: editMekanikName.trim(), whatsapp: editMekanikWa.trim() },
+          sweeper: { name: editSweeperName.trim(), whatsapp: editSweeperWa.trim() },
+          event_end_date: editEventDateEnd
+        }
       };
       setEventDetails(updatedEvent);
       localStorage.setItem('kr_eventDetails', JSON.stringify(updatedEvent));
@@ -1701,11 +1707,11 @@ function App() {
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <Calendar style={{ width: '18px', color: 'var(--text-secondary)' }} />
                   <div>
-                    {eventDetails.event_date && eventDetails.event_end_date ? (
+                    {eventDetails.event_date && (eventDetails.event_end_date || eventDetails.contacts?.event_end_date) ? (
                       <span>
                         {new Date(eventDetails.event_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} 
                         {' - '}
-                        {new Date(eventDetails.event_end_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        {new Date(eventDetails.event_end_date || eventDetails.contacts?.event_end_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                       </span>
                     ) : (
                       <span>
