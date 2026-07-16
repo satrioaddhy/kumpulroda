@@ -1598,8 +1598,8 @@ function App() {
       <header className="card card-primary" style={{ padding: '16px', marginBottom: '16px', borderTop: 'none' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <span className="badge badge-primary" style={{ marginBottom: '6px' }}>Pusat Komando MVP</span>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: '800' }}>KumpulRoda</h1>
+            <span className="badge badge-primary" style={{ marginBottom: '6px' }}>Dashboard</span>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: '800' }}>Halo Ngegasss</h1>
           </div>
           {myRsvp ? (
             <div style={{ textAlign: 'right' }}>
