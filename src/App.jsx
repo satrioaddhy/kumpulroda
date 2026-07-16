@@ -2185,10 +2185,11 @@ function App() {
             ) : (
               <div>
                 {/* Simulated GPS Debug Control Panel */}
-                <div className="debug-panel">
-                  <div className="debug-title">
-                    <Sliders style={{ width: '16px' }} /> Panel Simulasi GPS (Mock GPS)
-                  </div>
+                {isAdmin && (
+                  <div className="debug-panel">
+                    <div className="debug-title">
+                      <Sliders style={{ width: '16px' }} /> Panel Simulasi GPS (Mock GPS)
+                    </div>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
                     Gunakan panel ini untuk mensimulasikan posisi Anda agar dapat menguji kelayakan tombol Check-in di rest area.
                   </p>
@@ -2255,6 +2256,7 @@ function App() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* GPS Status Indicator */}
                 <div className="gps-info">
