@@ -27,7 +27,14 @@ import {
   Trophy,
   Download,
   Share2,
-  Sparkles
+  Sparkles,
+  Wallet,
+  CreditCard,
+  QrCode,
+  Receipt,
+  DollarSign,
+  Copy,
+  Check
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import './App.css';
@@ -215,6 +222,20 @@ const CONVOY_HAND_SIGNALS = [
   }
 ];
 
+const INITIAL_EXPENSES = [
+  { id: 'exp-1', title: 'Makan Siang Bersama (Gedung Sate)', amount: 350000, category: 'makan', spent_by: 'Pak Eko (Bendahara)', created_at: '2026-07-18T12:30:00Z' },
+  { id: 'exp-2', title: 'Bensin Emergency Rian (Ninja 250)', amount: 75000, category: 'bensin', spent_by: 'Dani (Sweeper)', created_at: '2026-07-18T09:15:00Z' },
+  { id: 'exp-3', title: 'Parkir Rombongan & Retribusi KM 57', amount: 40000, category: 'parkir', spent_by: 'Roni (RC)', created_at: '2026-07-18T08:10:00Z' }
+];
+
+const INITIAL_FINANCE_CONFIG = {
+  fee_per_person: 100000,
+  bank_name: 'BCA (Bank Central Asia)',
+  account_number: '8830192847',
+  account_owner: 'Eko Prasetyo (Bendahara KumpulRoda)',
+  qris_url: 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=KUMPULRODA-BANDUNG-RIDEOUT-DONASI-IURAN'
+};
+
 // --- RUMUS HAVERSINE (GEO-FENCING) ---
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000; // meter
@@ -367,6 +388,26 @@ function App() {
   const [editingRdId, setEditingRdId] = useState(null);
   const [editRdTime, setEditRdTime] = useState('');
   const [editRdTitle, setEditRdTitle] = useState('');
+
+  // Finance & Kas States
+  const [expensesList, setExpensesList] = useState(INITIAL_EXPENSES);
+  const [financeConfig, setFinanceConfig] = useState(INITIAL_FINANCE_CONFIG);
+  const [isQrisModalOpen, setIsQrisModalOpen] = useState(false);
+  const [copiedBank, setCopiedBank] = useState(false);
+
+  // Admin Expense Form State
+  const [newExpTitle, setNewExpTitle] = useState('');
+  const [newExpAmount, setNewExpAmount] = useState('');
+  const [newExpCategory, setNewExpCategory] = useState('makan');
+  const [newExpSpentBy, setNewExpSpentBy] = useState('');
+  const [expenseError, setExpenseError] = useState('');
+
+  // Admin Finance Config State
+  const [editFeePerPerson, setEditFeePerPerson] = useState('');
+  const [editBankName, setEditBankName] = useState('');
+  const [editAccountNumber, setEditAccountNumber] = useState('');
+  const [editAccountOwner, setEditAccountOwner] = useState('');
+  const [editQrisUrl, setEditQrisUrl] = useState('');
   const [editRdDesc, setEditRdDesc] = useState('');
 
   // Resolves short maps.app.goo.gl redirects
@@ -820,6 +861,24 @@ function App() {
       setRsvpWa(parsedRsvp.whatsapp);
       setRsvpMotor(parsedRsvp.motor_type);
       setRsvpStatus(parsedRsvp.ride_status);
+    }
+
+    // Expenses
+    const storedExpenses = localStorage.getItem('kr_expensesList');
+    if (storedExpenses) {
+      setExpensesList(JSON.parse(storedExpenses));
+    } else {
+      localStorage.setItem('kr_expensesList', JSON.stringify(INITIAL_EXPENSES));
+      setExpensesList(INITIAL_EXPENSES);
+    }
+
+    // Finance Config
+    const storedFinanceConfig = localStorage.getItem('kr_financeConfig');
+    if (storedFinanceConfig) {
+      setFinanceConfig(JSON.parse(storedFinanceConfig));
+    } else {
+      localStorage.setItem('kr_financeConfig', JSON.stringify(INITIAL_FINANCE_CONFIG));
+      setFinanceConfig(INITIAL_FINANCE_CONFIG);
     }
 
     const storedMyChecklist = localStorage.getItem('kr_my_checklist');
@@ -1675,6 +1734,119 @@ function App() {
       setActiveTab('dashboard');
       alert('Semua data berhasil disetel ulang ke kondisi awal.');
     }
+  };
+
+  // --- FINANCIAL CALCULATIONS & HANDLERS ---
+  const feePerPerson = financeConfig.fee_per_person || 100000;
+  const totalCollectedKas = participants.reduce((acc, p) => {
+    const multiplier = p.ride_status === 'boncengan' ? 2 : 1;
+    return acc + (feePerPerson * multiplier);
+  }, 0);
+
+  const totalExpenses = expensesList.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
+  const remainingKasBalance = totalCollectedKas - totalExpenses;
+
+  const myMultiplier = myRsvp ? (myRsvp.ride_status === 'boncengan' ? 2 : 1) : 1;
+  const myBillAmount = feePerPerson * myMultiplier;
+
+  const handleCopyBankAccount = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(financeConfig.account_number);
+      setCopiedBank(true);
+      setTimeout(() => setCopiedBank(false), 2000);
+    } else {
+      alert(`No. Rekening ${financeConfig.bank_name}: ${financeConfig.account_number}`);
+    }
+  };
+
+  const handleAddExpense = async (e) => {
+    e.preventDefault();
+    if (!newExpTitle.trim() || !newExpAmount) {
+      setExpenseError('Judul dan Nominal pengeluaran wajib diisi.');
+      return;
+    }
+    setExpenseError('');
+
+    const newExpenseObj = {
+      id: isSupabaseConfigured ? undefined : `exp-${Date.now()}`,
+      event_id: eventDetails.id || INITIAL_EVENT.id,
+      title: newExpTitle.trim(),
+      amount: parseFloat(newExpAmount),
+      category: newExpCategory,
+      spent_by: newExpSpentBy.trim() || 'Bendahara Panitia',
+      created_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from('event_expenses')
+          .insert([{
+            event_id: newExpenseObj.event_id,
+            title: newExpenseObj.title,
+            amount: newExpenseObj.amount,
+            category: newExpenseObj.category,
+            spent_by: newExpenseObj.spent_by
+          }])
+          .select();
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          setExpensesList(prev => [data[0], ...prev]);
+        }
+      } catch (err) {
+        console.error('Error adding expense to Supabase:', err);
+        alert('Gagal menyimpan pengeluaran ke database: ' + err.message);
+        return;
+      }
+    } else {
+      const updatedList = [newExpenseObj, ...expensesList];
+      setExpensesList(updatedList);
+      localStorage.setItem('kr_expensesList', JSON.stringify(updatedList));
+    }
+
+    setNewExpTitle('');
+    setNewExpAmount('');
+    setNewExpSpentBy('');
+    alert('Pengeluaran berhasil dicatat!');
+  };
+
+  const handleDeleteExpense = async (expId) => {
+    if (!confirm('Yakin ingin menghapus catatan pengeluaran ini?')) return;
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from('event_expenses')
+          .delete()
+          .eq('id', expId);
+
+        if (error) throw error;
+        setExpensesList(prev => prev.filter(e => e.id !== expId));
+      } catch (err) {
+        console.error('Error deleting expense:', err);
+        alert('Gagal menghapus pengeluaran: ' + err.message);
+        return;
+      }
+    } else {
+      const updatedList = expensesList.filter(e => e.id !== expId);
+      setExpensesList(updatedList);
+      localStorage.setItem('kr_expensesList', JSON.stringify(updatedList));
+    }
+  };
+
+  const handleSaveFinanceConfig = (e) => {
+    e.preventDefault();
+    const updatedConfig = {
+      fee_per_person: editFeePerPerson ? parseFloat(editFeePerPerson) : financeConfig.fee_per_person,
+      bank_name: editBankName.trim() || financeConfig.bank_name,
+      account_number: editAccountNumber.trim() || financeConfig.account_number,
+      account_owner: editAccountOwner.trim() || financeConfig.account_owner,
+      qris_url: editQrisUrl.trim() || financeConfig.qris_url
+    };
+    setFinanceConfig(updatedConfig);
+    localStorage.setItem('kr_financeConfig', JSON.stringify(updatedConfig));
+    alert('Pengaturan Kas & Rekening berhasil diperbarui!');
   };
 
   const setMockLocation = (lat, lng, name) => {
@@ -3007,7 +3179,7 @@ function App() {
                     </div>
                   )}
                 </div>
-                )}
+              )}
 
                 {/* GPS Status Indicator */}
                 <div className="gps-info">
@@ -3102,6 +3274,167 @@ function App() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* --- TAB: KAS & IURAN (TRANSPARANSI KAS & SPLIT BILL) --- */}
+        {activeTab === 'finance' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Header & Quick Intro */}
+            <div className="card">
+              <div className="flex-between">
+                <h2 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Wallet style={{ color: 'var(--primary)' }} /> Transparansi Kas & Split Bill
+                </h2>
+                <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>
+                  Live Financial Ledger
+                </span>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '8px', margin: 0, textAlign: 'left' }}>
+                Pencatatan keuangan kas touring secara real-time dan terbuka. Seluruh peserta dapat memantau pemasukan iuran, rincian pengeluaran operasional, dan melakukan transfer.
+              </p>
+            </div>
+
+            {/* Financial Summary Widgets Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+              {/* Total Terkumpul */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <DollarSign style={{ width: '14px', color: 'var(--success)' }} /> Kas Terkumpul
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--success)', marginTop: '4px' }}>
+                  Rp {totalCollectedKas.toLocaleString('id-ID')}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  {participants.length} Peserta Terdaftar
+                </div>
+              </div>
+
+              {/* Total Pengeluaran */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Receipt style={{ width: '14px', color: '#ef4444' }} /> Total Pengeluaran
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#ef4444', marginTop: '4px' }}>
+                  Rp {totalExpenses.toLocaleString('id-ID')}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  {expensesList.length} Transaksi Dicatat
+                </div>
+              </div>
+
+              {/* Sisa Saldo Kas */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Wallet style={{ width: '14px', color: 'var(--primary)' }} /> Sisa Saldo Kas
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: remainingKasBalance >= 0 ? 'var(--primary)' : '#ef4444', marginTop: '4px' }}>
+                  Rp {remainingKasBalance.toLocaleString('id-ID')}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Saldo Kas Aktif
+                </div>
+              </div>
+            </div>
+
+            {/* Personal Split Bill & Payment Card */}
+            <div className="card" style={{ background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 179, 8, 0.05) 100%)', borderColor: 'var(--primary)' }}>
+              <div className="flex-between" style={{ marginBottom: '10px' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CreditCard style={{ width: '18px' }} /> Kalkulator Tagihan Saya (Split Bill)
+                </h3>
+                <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>
+                  Rp {feePerPerson.toLocaleString('id-ID')} / pax
+                </span>
+              </div>
+
+              {myRsvp ? (
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Nama: <strong style={{ color: 'var(--text-primary)' }}>{myRsvp.name}</strong> ({myRsvp.ride_status === 'boncengan' ? 'Berboncengan - 2 Pax' : 'Solo Rider - 1 Pax'})
+                  </div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--primary)', margin: '8px 0' }}>
+                    Total Tagihan: Rp {myBillAmount.toLocaleString('id-ID')}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                    *Nominal iuran mencakup makan siang bersama, retribusi tempat wisata, dan dana kas operasional darurat konvoi.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '12px', textAlign: 'left' }}>
+                  Silakan melakukan <strong>RSVP</strong> terlebih dahulu untuk melihat estimasi rincian tagihan iuran individu Anda.
+                </div>
+              )}
+
+              {/* Payment Methods */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }}>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => setIsQrisModalOpen(true)}
+                  style={{ flex: 1, minWidth: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem' }}
+                >
+                  <QrCode style={{ width: '16px' }} /> Bayar via QRIS
+                </button>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleCopyBankAccount}
+                  style={{ flex: 1, minWidth: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem' }}
+                >
+                  {copiedBank ? <Check style={{ width: '16px', color: 'var(--success)' }} /> : <Copy style={{ width: '16px' }} />}
+                  {copiedBank ? 'No. Rek Tersalin!' : 'Salin Rekening Bank'}
+                </button>
+              </div>
+            </div>
+
+            {/* Rincian Transaksi Pengeluaran (Expense Ledger Table) */}
+            <div className="card">
+              <div className="flex-between" style={{ marginBottom: '12px' }}>
+                <h3 className="card-title" style={{ margin: 0, fontSize: '1rem' }}>
+                  <Receipt style={{ color: 'var(--primary)' }} /> Buku Kas Pengeluaran Transparan
+                </h3>
+                <span className="badge badge-secondary" style={{ fontSize: '0.7rem' }}>
+                  {expensesList.length} Transaksi
+                </span>
+              </div>
+
+              {expensesList.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0' }}>
+                  Belum ada catatan pengeluaran kas.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {expensesList.map((exp) => (
+                    <div 
+                      key={exp.id} 
+                      style={{ 
+                        background: 'var(--bg-surface-elevated)', 
+                        borderRadius: 'var(--radius-md)', 
+                        padding: '12px', 
+                        border: '1px solid var(--border-color)',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div className="flex-between" style={{ marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '1.2rem' }}>
+                            {exp.category === 'makan' ? '🍔' : exp.category === 'bensin' ? '⛽' : exp.category === 'parkir' ? '🅿️' : exp.category === 'tiket' ? '🎟️' : exp.category === 'mekanik' ? '🔧' : '📦'}
+                          </span>
+                          <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{exp.title}</strong>
+                        </div>
+                        <span style={{ fontWeight: '700', color: '#ef4444', fontSize: '0.95rem' }}>
+                          - Rp {(Number(exp.amount) || 0).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+
+                      <div className="flex-between" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        <span>Oleh: {exp.spent_by || 'Bendahara'}</span>
+                        <span>{new Date(exp.created_at || Date.now()).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -3725,6 +4058,161 @@ function App() {
                       </form>
                     </div>
 
+                    {/* Finance & Expense Manager Card (Bendahara Panel) */}
+                    <div className="card">
+                      <h3 style={{ fontSize: '1.05rem', marginBottom: '16px', textAlign: 'left', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Wallet style={{ width: '18px' }} /> Bendahara Panel (Kelola Kas & QRIS)
+                      </h3>
+
+                      {/* Add Expense Form */}
+                      <form onSubmit={handleAddExpense} style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '20px', textAlign: 'left' }}>
+                        <h4 style={{ fontSize: '0.9rem', marginBottom: '10px', color: 'var(--text-primary)' }}>Catat Pengeluaran Baru</h4>
+
+                        {expenseError && (
+                          <div className="badge badge-danger" style={{ display: 'block', width: '100%', padding: '6px', marginBottom: '10px', textTransform: 'none' }}>
+                            {expenseError}
+                          </div>
+                        )}
+
+                        <div className="form-group">
+                          <label className="form-label">Judul Pengeluaran</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="Cth: Makan Siang Bersama, Bensin Emergency" 
+                            value={newExpTitle}
+                            onChange={(e) => setNewExpTitle(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Nominal (Rp)</label>
+                            <input 
+                              type="number" 
+                              className="form-input" 
+                              placeholder="350000" 
+                              value={newExpAmount}
+                              onChange={(e) => setNewExpAmount(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="form-group">
+                            <label className="form-label">Kategori</label>
+                            <select 
+                              className="form-input" 
+                              value={newExpCategory} 
+                              onChange={(e) => setNewExpCategory(e.target.value)}
+                            >
+                              <option value="makan">🍔 Makan / Minum</option>
+                              <option value="bensin">⛽ Bensin</option>
+                              <option value="parkir">🅿️ Parkir / Retribusi</option>
+                              <option value="tiket">🎟️ Tiket Wisata</option>
+                              <option value="mekanik">🔧 Mekanik / Perbaikan</option>
+                              <option value="logistik">📦 Logistik Lainnya</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label className="form-label">Penanggung Jawab / Dikeluarkan Oleh</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="Cth: Pak Eko (Bendahara)" 
+                            value={newExpSpentBy}
+                            onChange={(e) => setNewExpSpentBy(e.target.value)}
+                          />
+                        </div>
+
+                        <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
+                          <Plus style={{ width: '16px' }} /> Simpan Pengeluaran
+                        </button>
+                      </form>
+
+                      {/* Current Expenses List with Delete option */}
+                      <h4 style={{ fontSize: '0.9rem', marginBottom: '10px', textAlign: 'left', color: 'var(--text-primary)' }}>Daftar Pengeluaran Active</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
+                        {expensesList.map((exp) => (
+                          <div key={exp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+                            <div style={{ textAlign: 'left' }}>
+                              <strong style={{ color: 'var(--text-primary)' }}>{exp.title}</strong>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{exp.spent_by} • Rp {(Number(exp.amount) || 0).toLocaleString('id-ID')}</div>
+                            </div>
+                            <button className="btn btn-danger" onClick={() => handleDeleteExpense(exp.id)} style={{ padding: '4px 8px', fontSize: '0.7rem', minHeight: '28px', height: '28px' }}>
+                              <Trash2 style={{ width: '14px' }} /> Hapus
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Edit Finance Settings Form */}
+                      <form onSubmit={handleSaveFinanceConfig} style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', textAlign: 'left' }}>
+                        <h4 style={{ fontSize: '0.9rem', marginBottom: '10px', color: 'var(--text-primary)' }}>Pengaturan Iuran & Rekening Transfer</h4>
+
+                        <div className="form-group">
+                          <label className="form-label">Tarif Iuran per Orang (Rp)</label>
+                          <input 
+                            type="number" 
+                            className="form-input" 
+                            placeholder={financeConfig.fee_per_person.toString()} 
+                            value={editFeePerPerson}
+                            onChange={(e) => setEditFeePerPerson(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Nama Bank</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder={financeConfig.bank_name} 
+                              value={editBankName}
+                              onChange={(e) => setEditBankName(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="form-group">
+                            <label className="form-label">No. Rekening</label>
+                            <input 
+                              type="text" 
+                              className="form-input" 
+                              placeholder={financeConfig.account_number} 
+                              value={editAccountNumber}
+                              onChange={(e) => setEditAccountNumber(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label className="form-label">Atas Nama Rekening</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder={financeConfig.account_owner} 
+                            value={editAccountOwner}
+                            onChange={(e) => setEditAccountOwner(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="form-group">
+                          <label className="form-label">URL Gambar QRIS</label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder={financeConfig.qris_url} 
+                            value={editQrisUrl}
+                            onChange={(e) => setEditQrisUrl(e.target.value)}
+                          />
+                        </div>
+
+                        <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '6px' }}>
+                          Simpan Pengaturan Rekening & QRIS
+                        </button>
+                      </form>
+                    </div>
+
                     {/* Rundown Manager Card */}
                     <div className="card">
                       <h3 style={{ fontSize: '1.05rem', marginBottom: '16px', textAlign: 'left', color: 'var(--primary)' }}>Kelola Rundown Acara</h3>
@@ -4082,6 +4570,63 @@ function App() {
         </div>
       )}
 
+      {/* QRIS & Payment Modal */}
+      {isQrisModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" style={{ maxWidth: '400px', textAlign: 'center' }}>
+            <div className="flex-between" style={{ marginBottom: '12px' }}>
+              <h3 className="modal-title" style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
+                <QrCode style={{ color: 'var(--primary)' }} /> Pembayaran iuran QRIS
+              </h3>
+              <button 
+                onClick={() => setIsQrisModalOpen(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+              Scan QRIS di bawah ini menggunakan m-Banking (BCA, Mandiri, BRI, BNI, dll) atau e-Wallet (GoPay, OVO, Dana, ShopeePay):
+            </p>
+
+            <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', display: 'inline-block', marginBottom: '14px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
+              <img 
+                src={financeConfig.qris_url} 
+                alt="QRIS Pembayaran" 
+                style={{ width: '220px', height: '220px', display: 'block' }} 
+              />
+              <div style={{ color: '#000', fontWeight: '700', fontSize: '0.85rem', marginTop: '6px' }}>
+                KUMPULRODA TOURING
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', padding: '10px 12px', fontSize: '0.8rem', textAlign: 'left', marginBottom: '14px', border: '1px solid var(--border-color)' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Transfer Bank Manual:</div>
+              <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{financeConfig.bank_name}</div>
+              <div style={{ color: 'var(--primary)', fontWeight: '700', fontSize: '0.95rem' }}>{financeConfig.account_number}</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>a.n {financeConfig.account_owner}</div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <a 
+                href={`https://wa.me/${eventDetails.pic_rc_wa || '628123456789'}?text=Halo%20Bendahara,%20saya%20sudah%20transfer%20iuran%20touring%20KumpulRoda.`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary"
+                style={{ background: '#25D366', color: '#fff', borderColor: '#25D366', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <Phone style={{ width: '16px' }} /> Konfirmasi Transfer via WhatsApp
+              </a>
+
+              <button className="btn btn-secondary" onClick={() => setIsQrisModalOpen(false)}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Navigation Tab Bar */}
       <nav className="bottom-nav">
         <button 
@@ -4106,6 +4651,14 @@ function App() {
         >
           <Users />
           <span>RSVP</span>
+        </button>
+
+        <button 
+          className={`nav-item ${activeTab === 'finance' ? 'active' : ''}`}
+          onClick={() => setActiveTab('finance')}
+        >
+          <Wallet />
+          <span>Kas & Iuran</span>
         </button>
 
         <button 

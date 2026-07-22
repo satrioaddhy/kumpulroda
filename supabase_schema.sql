@@ -260,3 +260,33 @@ on storage.objects for update using (bucket_id = 'avatars');
 
 create policy "Anyone can delete their avatar." 
 on storage.objects for delete using (bucket_id = 'avatars');
+
+-- =========================================================================
+-- 8. TABEL EVENT EXPENSES (KAS & PENGELUARAN TOURING)
+-- =========================================================================
+create table if not exists event_expenses (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade not null,
+  title text not null,
+  amount double precision not null,
+  category text default 'umum' not null,
+  spent_by text,
+  created_at timestamptz default now()
+);
+
+-- RLS untuk event_expenses
+alter table event_expenses enable row level security;
+create policy "Event expenses are readable by everyone" on event_expenses for select using (true);
+create policy "Anyone can insert event expenses" on event_expenses for insert with check (true);
+create policy "Anyone can update event expenses" on event_expenses for update using (true);
+create policy "Only admin can delete event expenses" on event_expenses for delete using (auth.role() = 'authenticated');
+
+-- Aktifkan Realtime untuk event_expenses
+alter publication supabase_realtime add table event_expenses;
+
+-- Seed Data Pengeluaran Awal (Demo Bandung Rideout)
+insert into event_expenses (event_id, title, amount, category, spent_by) values
+('11111111-1111-1111-1111-111111111111', 'Makan Siang Bersama (Gedung Sate)', 350000, 'makan', 'Pak Eko (Bendahara)'),
+('11111111-1111-1111-1111-111111111111', 'Bensin Emergency Rian (Ninja 250)', 75000, 'bensin', 'Dani (Sweeper)'),
+('11111111-1111-1111-1111-111111111111', 'Parkir Rombongan & Retribusi KM 57', 40000, 'parkir', 'Roni (RC)');
+
