@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { 
   MapPin, 
   Calendar, 
@@ -22,7 +21,12 @@ import {
   Trash2,
   Plus,
   Camera,
-  Image
+  Image,
+  Award,
+  Trophy,
+  Download,
+  Share2,
+  Sparkles
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import './App.css';
@@ -188,6 +192,12 @@ function App() {
     documents_ok: false
   });
   const [myCheckIns, setMyCheckIns] = useState({});
+
+  // Finisher Badge & E-Sticker Modal State
+  const [isBadgeModalOpen, setIsBadgeModalOpen] = useState(false);
+  const [badgeVariant, setBadgeVariant] = useState('story'); // 'story' | 'sticker'
+  const [isGeneratingBadge, setIsGeneratingBadge] = useState(false);
+  const [badgePreviewUrl, setBadgePreviewUrl] = useState(null);
 
   // RSVP Form States
   const [rsvpName, setRsvpName] = useState('');
@@ -1639,6 +1649,374 @@ function App() {
     </div>
   );
 
+  // --- FINISHER BADGE CANVAS GENERATOR & HANDLERS ---
+  const fillRoundRect = (ctx, x, y, w, h, r, fillStyle) => {
+    ctx.save();
+    ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const generateBadgeCanvas = async (variant = 'story') => {
+    return new Promise((resolve) => {
+      const isStory = variant === 'story';
+      const width = isStory ? 1080 : 1000;
+      const height = isStory ? 1920 : 1000;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      const completedCpCount = Object.keys(myCheckIns).length;
+      const totalCpCount = checkpointsList.length || 2;
+      const isFullFinisher = completedCpCount >= totalCpCount && totalCpCount > 0;
+
+      if (isStory) {
+        // --- 9:16 STORY CARD MODE ---
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0a0e17');
+        bgGrad.addColorStop(0.5, '#162032');
+        bgGrad.addColorStop(1, '#060911');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        // Carbon grid lines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.lineWidth = 2;
+        for (let i = -height; i < width + height; i += 40) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + height, height);
+          ctx.stroke();
+        }
+
+        // Radial Accent Glow
+        const orb = ctx.createRadialGradient(width / 2, 360, 20, width / 2, 360, 480);
+        orb.addColorStop(0, isFullFinisher ? 'rgba(234, 179, 8, 0.3)' : 'rgba(249, 115, 22, 0.3)');
+        orb.addColorStop(1, 'transparent');
+        ctx.fillStyle = orb;
+        ctx.fillRect(0, 0, width, height);
+
+        // Outer Borders
+        ctx.strokeStyle = isFullFinisher ? '#eab308' : '#f97316';
+        ctx.lineWidth = 14;
+        ctx.strokeRect(30, 30, width - 60, height - 60);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(48, 48, width - 96, height - 96);
+
+        // Header Branding
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 40px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('KUMPULRODA • OFFICIAL RIDE', width / 2, 135);
+
+        ctx.fillStyle = isFullFinisher ? '#eab308' : '#f97316';
+        ctx.font = '700 28px sans-serif';
+        ctx.fillText('⚡ PASPOR TOURING DIGITAL ⚡', width / 2, 185);
+
+        // Event Title
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 60px sans-serif';
+        const eventTitle = (eventDetails?.name || 'BANDUNG RIDEOUT 2026').toUpperCase();
+        ctx.fillText(eventTitle, width / 2, 280);
+
+        // Gold Accent Divider
+        ctx.strokeStyle = isFullFinisher ? '#eab308' : '#f97316';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(160, 320);
+        ctx.lineTo(width - 160, 320);
+        ctx.stroke();
+
+        // Main Box Card
+        const boxX = 90;
+        const boxY = 380;
+        const boxW = width - 180;
+        const boxH = 960;
+
+        fillRoundRect(ctx, boxX, boxY, boxW, boxH, 32, 'rgba(15, 23, 42, 0.88)');
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Draw Avatar Function
+        const drawAvatar = () => {
+          return new Promise((resolveImg) => {
+            const avatarUrl = myRsvp?.avatar_url;
+            const cx = width / 2;
+            const cy = boxY + 220;
+            const radius = 120;
+
+            if (avatarUrl) {
+              const img = new window.Image();
+              img.crossOrigin = 'anonymous';
+              img.src = avatarUrl;
+              img.onload = () => {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+                ctx.closePath();
+                ctx.clip();
+                ctx.drawImage(img, cx - radius, cy - radius, radius * 2, radius * 2);
+                ctx.restore();
+
+                ctx.strokeStyle = isFullFinisher ? '#eab308' : '#f97316';
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+                ctx.stroke();
+                resolveImg();
+              };
+              img.onerror = () => {
+                renderDefaultAvatar(cx, cy, radius);
+                resolveImg();
+              };
+            } else {
+              renderDefaultAvatar(cx, cy, radius);
+              resolveImg();
+            }
+          });
+        };
+
+        const renderDefaultAvatar = (cx, cy, radius) => {
+          ctx.fillStyle = 'rgba(249, 115, 22, 0.2)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = isFullFinisher ? '#eab308' : '#f97316';
+          ctx.lineWidth = 8;
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '900 84px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const initial = myRsvp?.name ? myRsvp.name.charAt(0).toUpperCase() : 'R';
+          ctx.fillText(initial, cx, cy);
+          ctx.textBaseline = 'alphabetic';
+        };
+
+        drawAvatar().then(() => {
+          // Participant Name
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '900 54px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(myRsvp?.name || 'Rider KumpulRoda', width / 2, boxY + 440);
+
+          // Motor Type
+          ctx.fillStyle = isFullFinisher ? '#fef08a' : '#fdba74';
+          ctx.font = '700 36px sans-serif';
+          ctx.fillText(`🏍️ ${myRsvp?.motor_type || 'Motor Touring'}`, width / 2, boxY + 510);
+
+          // Ride Status
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '600 28px sans-serif';
+          ctx.fillText(`Status: ${myRsvp?.ride_status === 'boncengan' ? 'Berboncengan' : 'Solo Rider'}`, width / 2, boxY + 560);
+
+          // Official Stamp Badge
+          const sealY = boxY + 700;
+          fillRoundRect(ctx, width / 2 - 270, sealY - 50, 540, 100, 50, isFullFinisher ? '#eab308' : '#0284c7');
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '900 32px sans-serif';
+          ctx.fillText(isFullFinisher ? '🏆 OFFICIAL FINISHER 🏆' : `📍 RIDER PARTICIPANT (${completedCpCount}/${totalCpCount} CP)`, width / 2, sealY + 12);
+
+          // Checkpoint Verification text
+          ctx.fillStyle = '#cbd5e1';
+          ctx.font = '600 26px sans-serif';
+          ctx.fillText(`Pos Check-in: ${completedCpCount} dari ${totalCpCount} Rest Area Terverifikasi`, width / 2, boxY + 850);
+
+          // Route Details Footer Box
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '600 26px sans-serif';
+          ctx.fillText('TITIK KUMPUL ➔ DESTINASI FINISH', width / 2, 1420);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 32px sans-serif';
+          const meetPt = (eventDetails?.meeting_point || INITIAL_EVENT.meeting_point);
+          ctx.fillText(meetPt.length > 38 ? meetPt.slice(0, 38) + '...' : meetPt, width / 2, 1475);
+
+          ctx.fillStyle = '#cbd5e1';
+          ctx.font = '700 28px sans-serif';
+          ctx.fillText(`Tanggal: ${eventDetails?.event_date || '18 Juli 2026'}`, width / 2, 1540);
+
+          // Serial Pass Footer
+          fillRoundRect(ctx, 90, 1610, width - 180, 130, 20, 'rgba(255, 255, 255, 0.05)');
+
+          ctx.fillStyle = '#f8fafc';
+          ctx.font = '900 34px monospace';
+          const serialCode = `#KR-${(myRsvp?.id || '2026').slice(-6).toUpperCase()}`;
+          ctx.fillText(`PASPOR ID: ${serialCode}`, width / 2, 1665);
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '600 24px sans-serif';
+          ctx.fillText('Terverifikasi oleh KumpulRoda Realtime Network', width / 2, 1715);
+
+          // App Footer
+          ctx.fillStyle = '#64748b';
+          ctx.font = '600 24px sans-serif';
+          ctx.fillText('KumpulRoda — Pusat Komando Digital Touring Motor', width / 2, 1830);
+
+          resolve(canvas.toDataURL('image/png'));
+        });
+      } else {
+        // --- 1:1 EMBLEM STICKER MODE ---
+        ctx.clearRect(0, 0, width, height);
+
+        const cx = width / 2;
+        const cy = height / 2;
+        const radius = 430;
+
+        // Outer Glow Ring
+        ctx.fillStyle = isFullFinisher ? 'rgba(234, 179, 8, 0.15)' : 'rgba(249, 115, 22, 0.15)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius + 30, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dark Emblem Body
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Metallic Rim
+        ctx.strokeStyle = isFullFinisher ? '#eab308' : '#f97316';
+        ctx.lineWidth = 18;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius - 10, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius - 28, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Carbon Texture
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.lineWidth = 3;
+        for (let i = -radius; i < radius; i += 30) {
+          ctx.beginPath();
+          ctx.moveTo(cx + i, cy - radius);
+          ctx.lineTo(cx + i + radius, cy + radius);
+          ctx.stroke();
+        }
+
+        // Header Arc Text / Top Text
+        ctx.fillStyle = isFullFinisher ? '#eab308' : '#f97316';
+        ctx.font = '900 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('★ KUMPULRODA TOURING ★', cx, cy - 250);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 50px sans-serif';
+        const eventTitle = (eventDetails?.name || 'BANDUNG RIDEOUT').toUpperCase();
+        ctx.fillText(eventTitle, cx, cy - 175);
+
+        // Center Trophy / Badge Box
+        fillRoundRect(ctx, cx - 230, cy - 100, 460, 100, 24, isFullFinisher ? '#eab308' : '#0284c7');
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 36px sans-serif';
+        ctx.fillText(isFullFinisher ? 'OFFICIAL FINISHER' : 'RIDER PARTICIPANT', cx, cy - 36);
+
+        // Participant Name
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 48px sans-serif';
+        ctx.fillText(myRsvp?.name || 'Rider KumpulRoda', cx, cy + 70);
+
+        // Motor Type
+        ctx.fillStyle = isFullFinisher ? '#fef08a' : '#fdba74';
+        ctx.font = '700 34px sans-serif';
+        ctx.fillText(`🏍️ ${myRsvp?.motor_type || 'Motor Touring'}`, cx, cy + 130);
+
+        // Route Summary
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '600 28px sans-serif';
+        ctx.fillText('BANDUNG RIDEOUT • 2026', cx, cy + 200);
+
+        // Checkpoint Stamp
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '600 24px sans-serif';
+        ctx.fillText(`CHECKPOINTS: ${completedCpCount}/${totalCpCount} TUNTAS`, cx, cy + 250);
+
+        // Bottom Arc Text / Footer
+        ctx.fillStyle = isFullFinisher ? '#eab308' : '#f97316';
+        ctx.font = '800 26px sans-serif';
+        ctx.fillText('• NO DOWNLOAD NO LOG-IN TOURING •', cx, cy + 325);
+
+        resolve(canvas.toDataURL('image/png'));
+      }
+    });
+  };
+
+  useEffect(() => {
+    if (isBadgeModalOpen && myRsvp) {
+      setIsGeneratingBadge(true);
+      generateBadgeCanvas(badgeVariant).then((url) => {
+        setBadgePreviewUrl(url);
+        setIsGeneratingBadge(false);
+      });
+    }
+  }, [isBadgeModalOpen, badgeVariant, myRsvp, myCheckIns, checkpointsList, eventDetails]);
+
+  const handleDownloadBadge = async () => {
+    try {
+      const dataUrl = badgePreviewUrl || await generateBadgeCanvas(badgeVariant);
+      const link = document.createElement('a');
+      link.download = `kumpulroda-badge-${(myRsvp?.name || 'rider').toLowerCase().replace(/\s+/g, '-')}-${badgeVariant}.png`;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Gagal mengunduh badge:', err);
+    }
+  };
+
+  const handleShareBadge = async () => {
+    try {
+      const dataUrl = badgePreviewUrl || await generateBadgeCanvas(badgeVariant);
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const fileName = `kumpulroda-badge-${badgeVariant}.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `${eventDetails?.name || 'KumpulRoda'} - Badge Rider`,
+          text: `Saya telah mengikuti touring ${eventDetails?.name || 'KumpulRoda'} sebagai Finisher!`
+        });
+      } else {
+        handleDownloadBadge();
+        alert('Badge gambar telah diunduh! Anda dapat langsung mengunggahnya ke Instagram Story atau WhatsApp Status.');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('Gagal membagikan badge:', err);
+        handleDownloadBadge();
+      }
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Database Mode Indicator */}
@@ -1855,6 +2233,13 @@ function App() {
               </button>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => setIsBadgeModalOpen(true)}
+                  style={{ background: 'linear-gradient(135deg, #f97316 0%, #eab308 100%)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <Trophy style={{ width: '18px' }} /> Cetak Badge & E-Sticker Finisher
+                </button>
                 {!myRsvp.bike_ready && (
                   <button className="btn btn-primary" onClick={() => setActiveTab('checklist')} style={{ background: 'linear-gradient(135deg, var(--warning) 0%, #d97706 100%)', boxShadow: 'none' }}>
                     Selesaikan Cek Kesiapan Motor
@@ -2079,6 +2464,14 @@ function App() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={() => setIsBadgeModalOpen(true)}
+                    style={{ background: 'linear-gradient(135deg, #f97316 0%, #eab308 100%)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <Trophy style={{ width: '18px' }} /> Cetak Badge & E-Sticker Finisher
+                  </button>
+
                   {!myRsvp.bike_ready ? (
                     <button className="btn btn-primary" onClick={() => setActiveTab('checklist')}>
                       Lanjut Cek Kelayakan Motor
@@ -2240,6 +2633,29 @@ function App() {
               </div>
             ) : (
               <div>
+                {/* Finisher Badge Banner Card */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(234, 179, 8, 0.15) 100%)', border: '1px solid var(--primary)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '16px' }}>
+                  <div className="flex-between">
+                    <div style={{ textAlign: 'left' }}>
+                      <span className="badge badge-primary" style={{ marginBottom: '4px', display: 'inline-flex', gap: '4px', alignItems: 'center', fontSize: '0.65rem' }}>
+                        <Award style={{ width: '12px' }} /> Badge Rider
+                      </span>
+                      <h4 style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-primary)' }}>
+                        {Object.keys(myCheckIns).length >= checkpointsList.length && checkpointsList.length > 0
+                          ? '🎉 Seluruh Checkpoint Tuntas! Anda Official Finisher'
+                          : `Status Checkpoint: ${Object.keys(myCheckIns).length} / ${checkpointsList.length} Tuntas`}
+                      </h4>
+                    </div>
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={() => setIsBadgeModalOpen(true)}
+                      style={{ width: 'auto', padding: '6px 12px', fontSize: '0.75rem', whiteSpace: 'nowrap', display: 'flex', gap: '4px', alignItems: 'center', background: 'linear-gradient(135deg, #f97316 0%, #eab308 100%)', border: 'none' }}
+                    >
+                      <Trophy style={{ width: '14px' }} /> Badge & Sticker
+                    </button>
+                  </div>
+                </div>
+
                 {/* Simulated GPS Debug Control Panel */}
                 {isAdminLoggedIn && (
                   <div className="debug-panel">
@@ -3252,6 +3668,135 @@ function App() {
               </button>
               <button className="btn btn-secondary" onClick={() => setIsSosOpen(false)}>
                 Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Digital Finisher Badge & E-Sticker Modal */}
+      {isBadgeModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" style={{ maxWidth: '440px', padding: '20px 16px' }}>
+            <div className="flex-between" style={{ marginBottom: '12px' }}>
+              <h3 className="modal-title" style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
+                <Trophy style={{ color: '#eab308' }} /> Digital Badge & E-Sticker
+              </h3>
+              <button 
+                onClick={() => setIsBadgeModalOpen(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px', textAlign: 'center' }}>
+              Pilih format visual di bawah untuk diunduh & dibagikan ke media sosial Anda!
+            </p>
+
+            {/* Mode Switcher */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: 'var(--bg-secondary)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
+              <button 
+                className="btn" 
+                style={{ 
+                  flex: 1, 
+                  minHeight: '36px', 
+                  height: '36px', 
+                  fontSize: '0.8rem', 
+                  padding: 0,
+                  background: badgeVariant === 'story' ? 'var(--primary)' : 'transparent',
+                  color: badgeVariant === 'story' ? '#fff' : 'var(--text-secondary)',
+                  boxShadow: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+                onClick={() => setBadgeVariant('story')}
+              >
+                <Smartphone style={{ width: '16px' }} /> 9:16 Story Card
+              </button>
+
+              <button 
+                className="btn" 
+                style={{ 
+                  flex: 1, 
+                  minHeight: '36px', 
+                  height: '36px', 
+                  fontSize: '0.8rem', 
+                  padding: 0,
+                  background: badgeVariant === 'sticker' ? 'var(--primary)' : 'transparent',
+                  color: badgeVariant === 'sticker' ? '#fff' : 'var(--text-secondary)',
+                  boxShadow: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+                onClick={() => setBadgeVariant('sticker')}
+              >
+                <Award style={{ width: '16px' }} /> Sticker Emblem
+              </button>
+            </div>
+
+            {/* Live Canvas Preview */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              background: 'rgba(0,0,0,0.4)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px',
+              border: '1px solid var(--border-color)',
+              marginBottom: '16px',
+              minHeight: '260px'
+            }}>
+              {isGeneratingBadge ? (
+                <div style={{ color: 'var(--primary)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <Sparkles className="spin" style={{ width: '24px', height: '24px' }} />
+                  Rendering Badge...
+                </div>
+              ) : badgePreviewUrl ? (
+                <img 
+                  src={badgePreviewUrl} 
+                  alt="Badge Preview" 
+                  style={{ 
+                    maxHeight: badgeVariant === 'story' ? '340px' : '260px', 
+                    maxWidth: '100%', 
+                    borderRadius: '8px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)' 
+                  }} 
+                />
+              ) : (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Gagal memuat pratinjau badge</div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleDownloadBadge}
+                disabled={isGeneratingBadge}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'linear-gradient(135deg, #f97316 0%, #eab308 100%)', border: 'none' }}
+              >
+                <Download style={{ width: '18px' }} /> Unduh Gambar (PNG)
+              </button>
+
+              <button 
+                className="btn btn-secondary" 
+                onClick={handleShareBadge}
+                disabled={isGeneratingBadge}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#25D366', color: '#fff', borderColor: '#25D366' }}
+              >
+                <Share2 style={{ width: '18px' }} /> Bagikan ke IG Story / WA
+              </button>
+
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setIsBadgeModalOpen(false)}
+                style={{ marginTop: '4px' }}
+              >
+                Tutup
               </button>
             </div>
           </div>
