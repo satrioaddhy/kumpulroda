@@ -131,6 +131,90 @@ const INITIAL_RUNDOWN = [
   { id: 'rd-6', time: '12.00', title: 'Finish & Lunch (Gedung Sate)', desc: 'Tiba di destinasi Bandung, foto bersama, & makan siang' }
 ];
 
+const CONVOY_HAND_SIGNALS = [
+  {
+    id: 'stop',
+    title: 'Berhenti / Stop',
+    category: 'kecepatan',
+    badge: 'Kecepatan',
+    gesture: 'Tangan kiri ditekuk 90° ke bawah, telapak tangan mengepal / menghadap belakang.',
+    desc: 'Wajib berhenti mendadak atau saat konvoi tiba di titik lampu merah / persimpangan.',
+    icon: '🛑'
+  },
+  {
+    id: 'slow-down',
+    title: 'Kurangi Kecepatan (Slow Down)',
+    category: 'kecepatan',
+    badge: 'Kecepatan',
+    gesture: 'Lambaian tangan kiri perlahan turun-naik dengan telapak tangan menghadap ke bawah.',
+    desc: 'Peringatan dari RC/Sweeper untuk mengurangi kecepatan karena ada rintangan atau tikungan.',
+    icon: '🔽'
+  },
+  {
+    id: 'speed-up',
+    title: 'Tambah Kecepatan (Speed Up)',
+    category: 'kecepatan',
+    badge: 'Kecepatan',
+    gesture: 'Lambaian tangan kiri lurus ke depan dan atas secara berulang.',
+    desc: 'Memberikan sinyal untuk meningkatkan kecepatan rombongan saat rute jalan lurus & sepi.',
+    icon: '🔼'
+  },
+  {
+    id: 'single-file',
+    title: 'Formasi 1 Baris (Single File)',
+    category: 'navigasi',
+    badge: 'Navigasi',
+    gesture: 'Jari telunjuk tangan kiri diangkat lurus tegak ke atas.',
+    desc: 'Pindah ke formasi 1 baris berurutan. Diperlukan saat melewati jalan sempit, jalan berliku, atau kemacetan.',
+    icon: '☝️'
+  },
+  {
+    id: 'staggered',
+    title: 'Formasi Selang-Seling (Zig-Zag)',
+    category: 'navigasi',
+    badge: 'Navigasi',
+    gesture: 'Jari telunjuk & jari tengah (isyarat V/Peace) diangkat lurus ke atas.',
+    desc: 'Formasi standar 2 baris berselang di jalan raya lebar. Menjaga jarak pandang & pengereman 3-5m.',
+    icon: '✌️'
+  },
+  {
+    id: 'hazard-left',
+    title: 'Bahaya Jalan Kiri (Lubang / Pasir)',
+    category: 'bahaya',
+    badge: 'Bahaya',
+    gesture: 'Kaki kiri dijulurkan atau tangan kiri menunjuk ke bawah arah jalan sebelah kiri.',
+    desc: 'Memberitahu peserta di belakang bahwa ada lubang, oli, pasir, atau kerikil di jalur kiri.',
+    icon: '⚠️'
+  },
+  {
+    id: 'hazard-right',
+    title: 'Bahaya Jalan Kanan (Lubang / Pasir)',
+    category: 'bahaya',
+    badge: 'Bahaya',
+    gesture: 'Kaki kanan dijulurkan menunjuk ke bawah arah jalan sebelah kanan.',
+    desc: 'Memberitahu peserta di belakang bahwa ada rintangan/lubang berbahaya di jalur kanan.',
+    icon: '⚠️'
+  },
+  {
+    id: 'fuel',
+    title: 'Pengisian Bensin / SPBU',
+    category: 'logistik',
+    badge: 'Logistik',
+    gesture: 'Ibu jari tangan kiri menunjuk berulang-ulang ke arah tangki bensin motor.',
+    desc: 'Sinyal dari peserta ke Sweeper/RC bahwa bensin berada pada batas minim & butuh SPBU.',
+    icon: '⛽'
+  },
+  {
+    id: 'rest',
+    title: 'Istirahat / Rest Area',
+    category: 'logistik',
+    badge: 'Logistik',
+    gesture: 'Tangan mengisyaratkan gerakan minum/makan atau menunjuk bahu.',
+    desc: 'Sinyal untuk memasuki rest area / tempat makan / coffee break.',
+    icon: '☕'
+  }
+];
+
 // --- RUMUS HAVERSINE (GEO-FENCING) ---
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000; // meter
@@ -199,6 +283,10 @@ function App() {
   const [badgeVariant, setBadgeVariant] = useState('story'); // 'story' | 'sticker'
   const [isGeneratingBadge, setIsGeneratingBadge] = useState(false);
   const [badgePreviewUrl, setBadgePreviewUrl] = useState(null);
+
+  // Convoy Rules & Hand Signals Tab States
+  const [rulesSubTab, setRulesSubTab] = useState('rules'); // 'rules' | 'signals' | 'formations'
+  const [signalCategory, setSignalCategory] = useState('all'); // 'all' | 'navigasi' | 'kecepatan' | 'bahaya' | 'logistik'
 
   // RSVP Form States
   const [rsvpName, setRsvpName] = useState('');
@@ -2213,18 +2301,208 @@ function App() {
               </div>
             </div>
 
-            {/* Rules Card */}
+            {/* Panduan Konvoi & Isyarat Tangan Card */}
             <div className="card">
-              <h2 className="card-title">
-                <Shield style={{ color: 'var(--primary)' }} /> Tata Tertib Konvoi
-              </h2>
-              <ul className="rules-list">
-                {eventDetails.rules_text ? eventDetails.rules_text.map((rule, index) => (
-                  <li key={index}>{rule}</li>
-                )) : INITIAL_EVENT.rules_text.map((rule, index) => (
-                  <li key={index}>{rule}</li>
-                ))}
-              </ul>
+              <div className="flex-between" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                <h2 className="card-title" style={{ margin: 0 }}>
+                  <Shield style={{ color: 'var(--primary)' }} /> Panduan Konvoi & Isyarat
+                </h2>
+                <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>
+                  Standard Touring ID
+                </span>
+              </div>
+
+              {/* Sub-tab Navigation Switcher */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: 'var(--bg-surface-elevated)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    flex: 1, 
+                    minHeight: '34px', 
+                    height: '34px', 
+                    fontSize: '0.8rem', 
+                    padding: 0,
+                    background: rulesSubTab === 'rules' ? 'var(--primary)' : 'transparent',
+                    color: rulesSubTab === 'rules' ? '#fff' : 'var(--text-secondary)',
+                    boxShadow: 'none'
+                  }}
+                  onClick={() => setRulesSubTab('rules')}
+                >
+                  📋 Tata Tertib
+                </button>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    flex: 1, 
+                    minHeight: '34px', 
+                    height: '34px', 
+                    fontSize: '0.8rem', 
+                    padding: 0,
+                    background: rulesSubTab === 'signals' ? 'var(--primary)' : 'transparent',
+                    color: rulesSubTab === 'signals' ? '#fff' : 'var(--text-secondary)',
+                    boxShadow: 'none'
+                  }}
+                  onClick={() => setRulesSubTab('signals')}
+                >
+                  🖐️ Isyarat Tangan
+                </button>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    flex: 1, 
+                    minHeight: '34px', 
+                    height: '34px', 
+                    fontSize: '0.8rem', 
+                    padding: 0,
+                    background: rulesSubTab === 'formations' ? 'var(--primary)' : 'transparent',
+                    color: rulesSubTab === 'formations' ? '#fff' : 'var(--text-secondary)',
+                    boxShadow: 'none'
+                  }}
+                  onClick={() => setRulesSubTab('formations')}
+                >
+                  🔀 Formasi
+                </button>
+              </div>
+
+              {/* SUB-TAB 1: TATA TERTIB */}
+              {rulesSubTab === 'rules' && (
+                <div>
+                  <ul className="rules-list">
+                    {eventDetails.rules_text ? eventDetails.rules_text.map((rule, index) => (
+                      <li key={index}>{rule}</li>
+                    )) : INITIAL_EVENT.rules_text.map((rule, index) => (
+                      <li key={index}>{rule}</li>
+                    ))}
+                  </ul>
+
+                  <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', padding: '12px', marginTop: '14px', border: '1px solid var(--border-color)', textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <AlertTriangle style={{ width: '16px' }} /> Catatan Penting Road Captain
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                      Setiap pengendara bertanggung jawab memperhatikan kaca spion untuk memastikan peserta di belakangnya tidak tertinggal.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 2: KAMUS ISYARAT TANGAN */}
+              {rulesSubTab === 'signals' && (
+                <div>
+                  {/* Category Filter Pills */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                    {[
+                      { id: 'all', label: 'Semua (9)' },
+                      { id: 'kecepatan', label: '⚡ Kecepatan' },
+                      { id: 'navigasi', label: '🧭 Navigasi' },
+                      { id: 'bahaya', label: '⚠️ Bahaya' },
+                      { id: 'logistik', label: '⛽ Logistik' }
+                    ].map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSignalCategory(cat.id)}
+                        style={{
+                          background: signalCategory === cat.id ? 'var(--primary-glow)' : 'rgba(255,255,255,0.05)',
+                          color: signalCategory === cat.id ? 'var(--primary)' : 'var(--text-secondary)',
+                          border: `1px solid ${signalCategory === cat.id ? 'var(--primary)' : 'var(--border-color)'}`,
+                          borderRadius: '20px',
+                          padding: '4px 10px',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          fontWeight: signalCategory === cat.id ? '700' : '500'
+                        }}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Signals List Cards */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {CONVOY_HAND_SIGNALS
+                      .filter(s => signalCategory === 'all' || s.category === signalCategory)
+                      .map((signal) => (
+                        <div 
+                          key={signal.id} 
+                          style={{ 
+                            background: 'var(--bg-surface-elevated)', 
+                            borderRadius: 'var(--radius-md)', 
+                            padding: '12px', 
+                            border: '1px solid var(--border-color)',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <div className="flex-between" style={{ marginBottom: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>{signal.icon}</span>
+                              <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>{signal.title}</strong>
+                            </div>
+                            <span className="badge badge-primary" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>
+                              {signal.badge}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: '600', marginBottom: '4px' }}>
+                            👉 Gerakan: {signal.gesture}
+                          </div>
+
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            {signal.desc}
+                          </div>
+                        </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-TAB 3: FORMASI BARISAN & PERAN */}
+              {rulesSubTab === 'formations' && (
+                <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Staggered Formation Card */}
+                  <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', padding: '14px', border: '1px solid var(--border-color)' }}>
+                    <h4 style={{ fontSize: '0.95rem', color: 'var(--primary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ✌️ Formasi Selang-Seling (Staggered / Zig-Zag)
+                    </h4>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                      Digunakan pada jalan raya lebar dan lurus. Road Captain berada di lajur kiri depan, motor ke-2 di lajur kanan (3-5m di belakang), motor ke-3 di lajur kiri, dan seterusnya.
+                    </p>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', textAlign: 'center', fontSize: '0.85rem', color: '#cbd5e1', border: '1px dashed var(--border-color)' }}>
+                      🚩 (RC Left) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>
+                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 🏍️ (Rider 2 Right)<br/>
+                      🏍️ (Rider 3 Left) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>
+                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 🛡️ (Sweeper Right)
+                    </div>
+                  </div>
+
+                  {/* Single File Formation Card */}
+                  <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', padding: '14px', border: '1px solid var(--border-color)' }}>
+                    <h4 style={{ fontSize: '0.95rem', color: 'var(--primary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ☝️ Formasi Satu Baris (Single File)
+                    </h4>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                      Wajib digunakan saat melewati jalan sempit, pegunungan berliku, kemacetan, atau cuaca hujan lebat. Seluruh rombongan berbaris 1 kolom berurutan.
+                    </p>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', textAlign: 'center', fontSize: '0.85rem', color: '#cbd5e1', border: '1px dashed var(--border-color)' }}>
+                      🚩 Road Captain (Depan)<br/>
+                      ↓ 🏍️ Rider 2<br/>
+                      ↓ 🏍️ Rider 3<br/>
+                      ↓ 🛡️ Sweeper Utama (Belakang)
+                    </div>
+                  </div>
+
+                  {/* Officer Role Card */}
+                  <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', padding: '14px', border: '1px solid var(--border-color)' }}>
+                    <h4 style={{ fontSize: '0.95rem', color: 'var(--primary)', marginBottom: '6px' }}>
+                      👑 Peran Pengurus Konvoi
+                    </h4>
+                    <ul style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <li><strong>Road Captain (RC):</strong> Berada paling depan. Menentukan rute, kecepatan, dan memberi isyarat instruksi. Dilarang mendahului RC.</li>
+                      <li><strong>Sweeper Utama:</strong> Berada paling belakang. Mengawal rombongan, memastikan tidak ada peserta tertinggal, dan menangani kendala teknis.</li>
+                      <li><strong>Mekanik / Tim Medis:</strong> Mengikuti barisan belakang dekat Sweeper untuk respon cepat.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bottom Call to Actions */}
