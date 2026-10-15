@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MapPin, 
   Calendar, 
@@ -22,7 +22,6 @@ import {
   Trash2,
   Plus,
   Camera,
-  Image,
   Award,
   Trophy,
   Download,
@@ -117,11 +116,11 @@ const INITIAL_EVENT = {
 };
 
 const INITIAL_PARTICIPANTS = [
-  { id: 'p1', name: 'Budi Hartono', whatsapp: '628111111111', motor_type: 'Honda ADV 160', ride_status: 'solo', bike_ready: true, check_ins: { 'cp-1': '2026-07-18T08:12:00Z' } },
-  { id: 'p2', name: 'Sari Wulandari', whatsapp: '628122222222', motor_type: 'Yamaha Xabre', ride_status: 'boncengan', bike_ready: false, check_ins: {} },
-  { id: 'p3', name: 'Rian Hidayat', whatsapp: '628133333333', motor_type: 'Kawasaki Ninja 250', ride_status: 'solo', bike_ready: true, check_ins: { 'cp-1': '2026-07-18T08:05:00Z' } },
-  { id: 'p4', name: 'Agus Setiawan', whatsapp: '628144444444', motor_type: 'Yamaha NMax', ride_status: 'boncengan', bike_ready: true, check_ins: {} },
-  { id: 'p5', name: 'Denny Pratama', whatsapp: '628155555555', motor_type: 'Honda PCX 160', ride_status: 'solo', bike_ready: false, check_ins: {} }
+  { id: 'p1', name: 'Budi Hartono', whatsapp: '628111111111', motor_type: 'Honda ADV 160', ride_status: 'solo', bike_ready: true, is_paid: true, check_ins: { 'cp-1': '2026-07-18T08:12:00Z' } },
+  { id: 'p2', name: 'Sari Wulandari', whatsapp: '628122222222', motor_type: 'Yamaha Xabre', ride_status: 'boncengan', bike_ready: false, is_paid: false, check_ins: {} },
+  { id: 'p3', name: 'Rian Hidayat', whatsapp: '628133333333', motor_type: 'Kawasaki Ninja 250', ride_status: 'solo', bike_ready: true, is_paid: true, check_ins: { 'cp-1': '2026-07-18T08:05:00Z' } },
+  { id: 'p4', name: 'Agus Setiawan', whatsapp: '628144444444', motor_type: 'Yamaha NMax', ride_status: 'boncengan', bike_ready: true, is_paid: true, check_ins: {} },
+  { id: 'p5', name: 'Denny Pratama', whatsapp: '628155555555', motor_type: 'Honda PCX 160', ride_status: 'solo', bike_ready: false, is_paid: false, check_ins: {} }
 ];
 
 const INITIAL_CHECKPOINTS = [
@@ -228,12 +227,24 @@ const INITIAL_EXPENSES = [
   { id: 'exp-3', title: 'Parkir Rombongan & Retribusi KM 57', amount: 40000, category: 'parkir', spent_by: 'Roni (RC)', created_at: '2026-07-18T08:10:00Z' }
 ];
 
-const INITIAL_FINANCE_CONFIG = {
+// Data contoh HANYA untuk mode demo lokal (tanpa Supabase)
+const DEMO_FINANCE_CONFIG = {
   fee_per_person: 100000,
   bank_name: 'BCA (Bank Central Asia)',
   account_number: '8830192847',
   account_owner: 'Eko Prasetyo (Bendahara KumpulRoda)',
-  qris_url: 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=KUMPULRODA-BANDUNG-RIDEOUT-DONASI-IURAN'
+  qris_url: 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=KUMPULRODA-BANDUNG-RIDEOUT-DONASI-IURAN',
+  treasurer_whatsapp: ''
+};
+
+// Mode Supabase: kosong sampai diisi admin, agar peserta tidak pernah melihat rekening contoh
+const EMPTY_FINANCE_CONFIG = {
+  fee_per_person: 0,
+  bank_name: '',
+  account_number: '',
+  account_owner: '',
+  qris_url: '',
+  treasurer_whatsapp: ''
 };
 
 // --- RUMUS HAVERSINE (GEO-FENCING) ---
@@ -255,12 +266,63 @@ const formatLastSeen = (isoString) => {
   return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
 };
 
+// Normalisasi nomor WhatsApp ke format internasional Indonesia (08xx / 8xx -> 628xx)
+const normalizeWa = (raw) => {
+  let digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) {
+    digits = '62' + digits.substring(1);
+  } else if (!digits.startsWith('62')) {
+    digits = '62' + digits;
+  }
+  return digits;
+};
+
+// Konversi tanggal ke format input HTML (YYYY-MM-DD) dengan zona waktu lokal (menghindari bug mundur 1 hari)
+const toDateInputString = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) return dateVal;
+    return '';
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Format tanggal untuk tampilan UI & Badge (Bahasa Indonesia)
+const formatDisplayDate = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return String(dateVal);
+  return d.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+};
+
+const isSupabaseConfigured = Boolean(
+  import.meta.env.VITE_SUPABASE_URL &&
+  import.meta.env.VITE_SUPABASE_URL !== 'https://your-project-id.supabase.co' &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY !== 'your-anonymous-anon-key-here'
+);
+
+// Cek ke server apakah user yang login terdaftar di allowlist admin (fungsi SQL public.is_admin)
+const checkIsAdmin = async () => {
+  const { data, error } = await supabase.rpc('is_admin');
+  if (error) {
+    console.warn('Verifikasi admin gagal (sudah menjalankan migrasi database?):', error.message);
+    return { isAdmin: false, error };
+  }
+  return { isAdmin: data === true, error: null };
+};
+
 function App() {
-  const isSupabaseConfigured = 
-    import.meta.env.VITE_SUPABASE_URL && 
-    import.meta.env.VITE_SUPABASE_URL !== 'https://your-project-id.supabase.co' &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY !== 'your-anonymous-anon-key-here';
 
   // Navigation
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -273,6 +335,9 @@ function App() {
   const [gpsCoords, setGpsCoords] = useState({ lat: -6.2425, lng: 106.8622 });
   const [isMockGps, setIsMockGps] = useState(false); 
   const [gpsStatusText, setGpsStatusText] = useState('Simulasi Aktif');
+  // true hanya jika koordinat berasal dari sensor GPS asli / simulasi admin (bukan nilai default)
+  const [hasGpsFix, setHasGpsFix] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState(null);
   
   // Admin Navigation / Views
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
@@ -317,6 +382,7 @@ function App() {
   const [rsvpAvatarFile, setRsvpAvatarFile] = useState(null);
   const [rsvpAvatarPreview, setRsvpAvatarPreview] = useState(null);
   const [formError, setFormError] = useState('');
+  const [isEditingRsvp, setIsEditingRsvp] = useState(false);
 
   // --- GMAPS INPUT PARSER FUNCTION ---
   const parseGmapsInput = (input) => {
@@ -353,7 +419,6 @@ function App() {
   const [editEventName, setEditEventName] = useState('');
   const [editEventDate, setEditEventDate] = useState('');
   const [editEventDateEnd, setEditEventDateEnd] = useState('');
-  const [editEventTime, setEditEventTime] = useState('');
   const [editMeetingPoint, setEditMeetingPoint] = useState('');
   const [editRoadCaptain, setEditRoadCaptain] = useState('');
   const [editSweeper, setEditSweeper] = useState('');
@@ -390,8 +455,8 @@ function App() {
   const [editRdTitle, setEditRdTitle] = useState('');
 
   // Finance & Kas States
-  const [expensesList, setExpensesList] = useState(INITIAL_EXPENSES);
-  const [financeConfig, setFinanceConfig] = useState(INITIAL_FINANCE_CONFIG);
+  const [expensesList, setExpensesList] = useState(isSupabaseConfigured ? [] : INITIAL_EXPENSES);
+  const [financeConfig, setFinanceConfig] = useState(isSupabaseConfigured ? EMPTY_FINANCE_CONFIG : DEMO_FINANCE_CONFIG);
   const [isQrisModalOpen, setIsQrisModalOpen] = useState(false);
   const [copiedBank, setCopiedBank] = useState(false);
 
@@ -408,7 +473,12 @@ function App() {
   const [editAccountNumber, setEditAccountNumber] = useState('');
   const [editAccountOwner, setEditAccountOwner] = useState('');
   const [editQrisUrl, setEditQrisUrl] = useState('');
-  const [editRdDesc, setEditRdDesc] = useState('');
+  const [editTreasurerWa, setEditTreasurerWa] = useState('');
+  const [editRoadCaptainWa, setEditRoadCaptainWa] = useState('');
+  const [editRulesText, setEditRulesText] = useState('');
+
+  const destUrlTimer = useRef(null);
+  const cpUrlTimer = useRef(null);
 
   // Resolves short maps.app.goo.gl redirects
   const resolveShortUrl = async (shortUrl, type) => {
@@ -443,21 +513,35 @@ function App() {
     }
   };
 
-  // Automatically update parsed destination coordinates on input change
-  const handleDestGmapsChange = async (val) => {
+  // Automatically update parsed destination coordinates on input change with debounce
+  const handleDestGmapsChange = (val) => {
     setEditDestGmapsInput(val);
+    if (destUrlTimer.current) clearTimeout(destUrlTimer.current);
+
     if (val.includes('maps.app.goo.gl')) {
-      await resolveShortUrl(val, 'event');
+      const match = val.match(/https?:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]+/);
+      if (match) {
+        destUrlTimer.current = setTimeout(() => {
+          resolveShortUrl(match[0], 'event');
+        }, 500);
+      }
     } else {
       setParsedDestCoords(parseGmapsInput(val));
     }
   };
 
-  // Automatically update parsed checkpoint coordinates on input change
-  const handleCpGmapsChange = async (val) => {
+  // Automatically update parsed checkpoint coordinates on input change with debounce
+  const handleCpGmapsChange = (val) => {
     setNewCpGmapsInput(val);
+    if (cpUrlTimer.current) clearTimeout(cpUrlTimer.current);
+
     if (val.includes('maps.app.goo.gl')) {
-      await resolveShortUrl(val, 'checkpoint');
+      const match = val.match(/https?:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]+/);
+      if (match) {
+        cpUrlTimer.current = setTimeout(() => {
+          resolveShortUrl(match[0], 'checkpoint');
+        }, 500);
+      }
     } else {
       setParsedCpCoords(parseGmapsInput(val));
     }
@@ -467,10 +551,9 @@ function App() {
   useEffect(() => {
     if (eventDetails) {
       setEditEventName(eventDetails.name || '');
-      setEditEventDate(eventDetails.event_date ? eventDetails.event_date.split('T')[0] : '');
+      setEditEventDate(toDateInputString(eventDetails.event_date));
       const endDt = eventDetails.event_end_date || eventDetails.contacts?.event_end_date;
-      setEditEventDateEnd(endDt ? endDt.split('T')[0] : '');
-      setEditEventTime(eventDetails.time_label || '');
+      setEditEventDateEnd(toDateInputString(endDt));
       setEditMeetingPoint(eventDetails.meeting_point || '');
       setEditRoadCaptain(eventDetails.road_captain || '');
       setEditSweeper(eventDetails.sweeper || '');
@@ -481,6 +564,10 @@ function App() {
       setEditMekanikWa(c?.mekanik?.whatsapp || '');
       setEditSweeperName(c?.sweeper?.name || '');
       setEditSweeperWa(c?.sweeper?.whatsapp || '');
+      setEditRoadCaptainWa(c?.road_captain?.whatsapp || '');
+
+      const rules = eventDetails.rules_text || INITIAL_EVENT.rules_text;
+      setEditRulesText(Array.isArray(rules) ? rules.join('\n') : '');
       
       const lat = eventDetails.map_destination_lat;
       const lng = eventDetails.map_destination_lng;
@@ -494,46 +581,104 @@ function App() {
     }
   }, [eventDetails]);
 
+  // Isi form pengaturan kas dengan nilai yang tersimpan
+  useEffect(() => {
+    setEditFeePerPerson(financeConfig.fee_per_person ? String(financeConfig.fee_per_person) : '');
+    setEditBankName(financeConfig.bank_name || '');
+    setEditAccountNumber(financeConfig.account_number || '');
+    setEditAccountOwner(financeConfig.account_owner || '');
+    setEditQrisUrl(financeConfig.qris_url || '');
+    setEditTreasurerWa(financeConfig.treasurer_whatsapp || '');
+  }, [financeConfig]);
+
   // --- INITIAL DATA FETCH & SUPABASE AUTH SESSION ---
   useEffect(() => {
-    if (isSupabaseConfigured) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setIsAdminLoggedIn(!!session);
-      });
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setIsAdminLoggedIn(!!session);
-      });
-
-      fetchDataFromSupabase();
-    } else {
+    if (!isSupabaseConfigured) {
       loadFromLocalStorage();
+      return;
     }
-  }, [isSupabaseConfigured]);
 
-  // --- REAL-TIME DATABASE LISTENERS ---
+    let isActive = true;
+
+    // Login saja tidak cukup: email harus terdaftar di allowlist admin
+    const syncAdminStatus = async (session) => {
+      if (!session) {
+        if (isActive) setIsAdminLoggedIn(false);
+        return;
+      }
+      const { isAdmin } = await checkIsAdmin();
+      if (isActive) setIsAdminLoggedIn(isAdmin);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => syncAdminStatus(session));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Ditunda agar tidak memanggil Supabase di dalam callback auth (bisa deadlock)
+      setTimeout(() => syncAdminStatus(session), 0);
+    });
+
+    fetchDataFromSupabase();
+
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // --- REAL-TIME DATABASE LISTENERS DENGAN DEBOUNCE & IN-MEMORY LOCATION SYNC ---
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
+    let debounceTimer = null;
+    const triggerDebouncedFetch = (delay = 1000) => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchDataFromSupabase();
+      }, delay);
+    };
+
     const realtimeChannel = supabase
       .channel('kumpulroda-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, () => fetchDataFromSupabase())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bike_checklists' }, () => fetchDataFromSupabase())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'check_ins' }, () => fetchDataFromSupabase())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => fetchDataFromSupabase())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkpoints' }, () => fetchDataFromSupabase())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rundown_items' }, () => fetchDataFromSupabase())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, (payload) => {
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          // Update in-memory langsung agar tidak memicu 6 query beruntun setiap kali GPS rider update
+          setParticipants(prev => prev.map(p => p.id === payload.new.id ? { ...p, ...payload.new } : p));
+          // Jika status SOS atau kelayakan motor berubah, fetch ulang secara debounced
+          if (payload.new.sos_active || payload.new.bike_ready !== payload.old?.bike_ready) {
+            triggerDebouncedFetch(500);
+          }
+        } else {
+          // Penambahan atau penghapusan peserta
+          triggerDebouncedFetch(1000);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bike_checklists' }, () => triggerDebouncedFetch(800))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'check_ins' }, () => triggerDebouncedFetch(800))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => triggerDebouncedFetch(1000))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkpoints' }, () => triggerDebouncedFetch(1000))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rundown_items' }, () => triggerDebouncedFetch(1000))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_expenses' }, () => triggerDebouncedFetch(800))
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(realtimeChannel);
     };
-  }, [isSupabaseConfigured]);
+  }, []);
+
+  const shouldWatchGps = isMockGps || !!myRsvp || activeTab === 'checkin' || (activeTab === 'admin' && adminSubTab === 'sos');
 
   // --- GEOLOCATION WATCHER FOR REAL GPS ---
   useEffect(() => {
     if (isMockGps) {
       setGpsStatusText('Simulasi Aktif (Mock GPS)');
+      setHasGpsFix(true);
+      return;
+    }
+
+    if (!shouldWatchGps) {
+      // Hemat baterai pengunjung biasa yang hanya membaca info acara/rundown
+      setGpsStatusText('GPS Standby (Hemat Baterai)');
       return;
     }
 
@@ -543,17 +688,21 @@ function App() {
     }
 
     setGpsStatusText('Mencari sinyal GPS...');
+    setHasGpsFix(false);
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude, accuracy } = position.coords;
         setGpsCoords({ lat: latitude, lng: longitude });
+        setGpsAccuracy(Number.isFinite(accuracy) ? Math.round(accuracy) : null);
+        setHasGpsFix(true);
         setGpsStatusText('GPS Aktif (Real-time)');
       },
       (error) => {
         console.warn('Geolocation error:', error);
         switch (error.code) {
           case error.PERMISSION_DENIED:
+            setHasGpsFix(false);
             setGpsStatusText('Akses GPS Ditolak');
             break;
           case error.POSITION_UNAVAILABLE:
@@ -569,21 +718,19 @@ function App() {
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 0
+        maximumAge: 5000
       }
     );
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [isMockGps]);
+  }, [isMockGps, shouldWatchGps]);
 
   // --- REAL-TIME GPS SYNC TO SUPABASE ---
   useEffect(() => {
-    if (!isSupabaseConfigured || !myRsvp) return;
-
-    // Avoid syncing if coordinates are defaults
-    if (gpsCoords.lat === -6.2425 && gpsCoords.lng === 106.8622) return;
+    // Jangan kirim koordinat default/palsu sebelum GPS benar-benar terkunci
+    if (!isSupabaseConfigured || !myRsvp || !hasGpsFix) return;
 
     const lastSyncTime = parseInt(localStorage.getItem('kr_last_gps_sync') || '0', 10);
     const now = Date.now();
@@ -615,7 +762,7 @@ function App() {
     };
 
     syncGps();
-  }, [gpsCoords, myRsvp?.id, myRsvp?.sos_active, isSupabaseConfigured]);
+  }, [gpsCoords, myRsvp, hasGpsFix]);
 
   // Fetch all state from Supabase
   const fetchDataFromSupabase = async () => {
@@ -625,6 +772,7 @@ function App() {
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
+        .order('created_at', { ascending: false })
         .limit(1);
 
       if (eventError) {
@@ -632,6 +780,7 @@ function App() {
       } else if (eventData && eventData.length > 0) {
         currentEvent = eventData[0];
         setEventDetails(currentEvent);
+        setFinanceConfig({ ...EMPTY_FINANCE_CONFIG, ...(currentEvent.finance_config || {}) });
       } else {
         // If empty, insert the initial event row so the database has it!
         const cleanInitialEvent = {
@@ -684,34 +833,26 @@ function App() {
 
       if (rdError) {
         console.warn('Gagal memuat rundown items:', rdError.message);
-      } else if (rdData && rdData.length > 0) {
+      } else if (rdData) {
         setRundownList(rdData.map(item => ({
           id: item.id,
           time: item.time_label,
           title: item.title,
           desc: item.description
         })));
-      } else {
-        // Auto-seed rundown items if empty
-        const cleanInitialRundown = INITIAL_RUNDOWN.map((item, idx) => ({
-          event_id: activeEventId,
-          time_label: item.time,
-          title: item.title,
-          description: item.desc,
-          sort_order: idx + 1
-        }));
-        const { data: insertedRd, error: rdInsertError } = await supabase
-          .from('rundown_items')
-          .insert(cleanInitialRundown)
-          .select();
-        if (!rdInsertError && insertedRd) {
-          setRundownList(insertedRd.map(item => ({
-            id: item.id,
-            time: item.time_label,
-            title: item.title,
-            desc: item.description
-          })));
-        }
+      }
+
+      // 4a. Fetch Pengeluaran Kas (buku kas transparan)
+      const { data: expData, error: expError } = await supabase
+        .from('event_expenses')
+        .select('*')
+        .eq('event_id', activeEventId)
+        .order('created_at', { ascending: false });
+
+      if (expError) {
+        console.warn('Gagal memuat pengeluaran kas:', expError.message);
+      } else if (expData) {
+        setExpensesList(expData);
       }
 
       // 4. Fetch Participants with checklists
@@ -728,12 +869,18 @@ function App() {
 
       if (pError) throw pError;
 
-      // 5. Fetch Check-ins
-      const { data: checkinsData, error: cError } = await supabase
-        .from('check_ins')
-        .select('*');
+      // 5. Fetch Check-ins for active checkpoints only
+      const cpIds = (cpData || []).map(cp => cp.id);
+      let checkinsData = [];
+      if (cpIds.length > 0) {
+        const { data: cData, error: cError } = await supabase
+          .from('check_ins')
+          .select('*')
+          .in('checkpoint_id', cpIds);
 
-      if (cError) throw cError;
+        if (cError) throw cError;
+        checkinsData = cData || [];
+      }
 
       // 6. Map check-ins to participants in-memory
       const mappedParticipants = participantsData.map(p => {
@@ -756,6 +903,7 @@ function App() {
           last_seen_at: p.last_seen_at,
           sos_active: p.sos_active,
           avatar_url: p.avatar_url,
+          is_paid: Boolean(p.is_paid),
           check_ins: pCheckins
         };
       });
@@ -778,7 +926,8 @@ function App() {
             longitude: foundUser.longitude,
             last_seen_at: foundUser.last_seen_at,
             sos_active: foundUser.sos_active,
-            avatar_url: foundUser.avatar_url
+            avatar_url: foundUser.avatar_url,
+            is_paid: Boolean(foundUser.is_paid)
           });
 
           const rawChecklist = participantsData.find(p => p.id === storedRsvpId)?.bike_checklists;
@@ -847,7 +996,8 @@ function App() {
     // Participants
     const storedParticipants = localStorage.getItem('kr_participants');
     if (storedParticipants) {
-      setParticipants(JSON.parse(storedParticipants));
+      const parsedParts = JSON.parse(storedParticipants);
+      setParticipants(parsedParts.map(p => ({ ...p, is_paid: Boolean(p.is_paid) })));
     } else {
       localStorage.setItem('kr_participants', JSON.stringify(INITIAL_PARTICIPANTS));
       setParticipants(INITIAL_PARTICIPANTS);
@@ -856,7 +1006,7 @@ function App() {
     const storedMyRsvp = localStorage.getItem('kr_my_rsvp');
     if (storedMyRsvp) {
       const parsedRsvp = JSON.parse(storedMyRsvp);
-      setMyRsvp(parsedRsvp);
+      setMyRsvp({ ...parsedRsvp, is_paid: Boolean(parsedRsvp.is_paid) });
       setRsvpName(parsedRsvp.name);
       setRsvpWa(parsedRsvp.whatsapp);
       setRsvpMotor(parsedRsvp.motor_type);
@@ -875,10 +1025,10 @@ function App() {
     // Finance Config
     const storedFinanceConfig = localStorage.getItem('kr_financeConfig');
     if (storedFinanceConfig) {
-      setFinanceConfig(JSON.parse(storedFinanceConfig));
+      setFinanceConfig({ ...DEMO_FINANCE_CONFIG, ...JSON.parse(storedFinanceConfig) });
     } else {
-      localStorage.setItem('kr_financeConfig', JSON.stringify(INITIAL_FINANCE_CONFIG));
-      setFinanceConfig(INITIAL_FINANCE_CONFIG);
+      localStorage.setItem('kr_financeConfig', JSON.stringify(DEMO_FINANCE_CONFIG));
+      setFinanceConfig(DEMO_FINANCE_CONFIG);
     }
 
     const storedMyChecklist = localStorage.getItem('kr_my_checklist');
@@ -897,6 +1047,19 @@ function App() {
   const totalRider = totalMotor; // 1 rider per motor
   const totalBoncenger = participants.filter(p => p.ride_status === 'boncengan').length;
   const totalKepala = totalRider + totalBoncenger;
+
+  const activeSosRiders = participants.filter(p => p.sos_active && p.id !== myRsvp?.id);
+
+  // Getar perangkat jika ada anggota konvoi baru yang mengaktifkan SOS darurat
+  const prevSosCount = useRef(0);
+  useEffect(() => {
+    if (activeSosRiders.length > prevSosCount.current) {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([300, 150, 300, 150, 500]);
+      }
+    }
+    prevSosCount.current = activeSosRiders.length;
+  }, [activeSosRiders.length]);
 
   // Get Map Embed URL (automatically generates a directions route passing through checkpoints in order to the destination coordinates if default or empty)
   const getMapEmbedUrl = () => {
@@ -960,12 +1123,7 @@ function App() {
       return;
     }
 
-    let formattedWa = cleanWa;
-    if (formattedWa.startsWith('0')) {
-      formattedWa = '62' + formattedWa.substring(1);
-    } else if (!formattedWa.startsWith('62')) {
-      formattedWa = '62' + formattedWa;
-    }
+    const formattedWa = normalizeWa(cleanWa);
 
     if (isSupabaseConfigured) {
       try {
@@ -1037,6 +1195,7 @@ function App() {
             localStorage.setItem('kr_my_rsvp_id', data[0].id);
           }
         }
+        setIsEditingRsvp(false);
         await fetchDataFromSupabase();
       } catch (err) {
         console.error(err);
@@ -1066,6 +1225,7 @@ function App() {
       }
       localStorage.setItem('kr_participants', JSON.stringify(updatedList));
       setParticipants(updatedList);
+      setIsEditingRsvp(false);
       setLoading(false);
     }
   };
@@ -1098,6 +1258,7 @@ function App() {
           documents_ok: false
         });
         setMyCheckIns({});
+        setIsEditingRsvp(false);
         await fetchDataFromSupabase();
       } catch (err) {
         console.error(err);
@@ -1124,6 +1285,7 @@ function App() {
         documents_ok: false
       });
       setMyCheckIns({});
+      setIsEditingRsvp(false);
       setLoading(false);
     }
 
@@ -1238,60 +1400,81 @@ function App() {
   };
 
   // SOS Redirection
-  const triggerSos = async () => {
-    setIsSosOpen(false);
-
-    // Update SOS state in DB instantly
-    if (isSupabaseConfigured && myRsvp) {
-      try {
-        await supabase
-          .from('participants')
-          .update({
-            sos_active: true,
-            latitude: gpsCoords.lat,
-            longitude: gpsCoords.lng,
-            last_seen_at: new Date().toISOString()
-          })
-          .eq('id', myRsvp.id);
-
-        setMyRsvp(prev => ({ ...prev, sos_active: true }));
-        await fetchDataFromSupabase();
-      } catch (err) {
-        console.error('Gagal mengaktifkan SOS di DB:', err);
-      }
-    } else if (myRsvp) {
-      setMyRsvp(prev => ({ ...prev, sos_active: true }));
-      const updatedList = participants.map(p => p.id === myRsvp.id ? { ...p, sos_active: true, latitude: gpsCoords.lat, longitude: gpsCoords.lng, last_seen_at: new Date().toISOString() } : p);
-      setParticipants(updatedList);
-      localStorage.setItem('kr_participants', JSON.stringify(updatedList));
+  // PENTING: WhatsApp dibuka SINKRON di dalam handler klik. Jika dibuka setelah `await`,
+  // browser HP (terutama iOS Safari) akan memblokirnya sebagai popup.
+  const triggerSos = () => {
+    const contacts = eventDetails.contacts || INITIAL_EVENT.contacts;
+    const targetContact = contacts?.[sosContact] || INITIAL_EVENT.contacts[sosContact];
+    const waNumber = normalizeWa(targetContact?.whatsapp);
+    if (!waNumber) {
+      alert('Nomor WhatsApp responden darurat belum diatur panitia. Segera telepon panitia secara langsung!');
+      return;
     }
 
-    const targetContact = eventDetails.contacts ? eventDetails.contacts[sosContact] : INITIAL_EVENT.contacts[sosContact];
-    const mapsLink = `https://maps.google.com/?q=${gpsCoords.lat},${gpsCoords.lng}`;
+    const locationLine = hasGpsFix
+      ? `Lokasi saya: https://maps.google.com/?q=${gpsCoords.lat},${gpsCoords.lng}${gpsAccuracy ? ` (akurasi ±${gpsAccuracy} m)` : ''}`
+      : 'Lokasi: GPS belum terdeteksi, mohon segera telepon saya.';
     
-    let textMessage = `[SOS KumpulRoda] Butuh bantuan darurat!\nNama: ${myRsvp ? myRsvp.name : 'Anggota Anonim'}\nMotor: ${myRsvp ? myRsvp.motor_type : 'Tidak Diketahui'}\nLokasi saya: ${mapsLink}`;
+    let textMessage = `[SOS KumpulRoda] Butuh bantuan darurat!\nNama: ${myRsvp ? myRsvp.name : 'Anggota Anonim'}\nMotor: ${myRsvp ? myRsvp.motor_type : 'Tidak Diketahui'}\n${locationLine}`;
     
-    if (isMockGps) {
+    if (isMockGps && hasGpsFix) {
       textMessage += `\n*(Catatan: Lokasi dikirim via simulasi GPS)`;
     }
 
     const encodedText = encodeURIComponent(textMessage);
-    const waUrl = `https://wa.me/${targetContact.whatsapp}?text=${encodedText}`;
+    const waUrl = `https://wa.me/${waNumber}?text=${encodedText}`;
     
-    window.open(waUrl, '_blank');
+    // Mulai simpan status SOS ke database (tidak di-await agar WhatsApp langsung terbuka)
+    markSosActive();
+
+    const waWindow = window.open(waUrl, '_blank');
+    if (!waWindow) {
+      // Popup tetap diblokir: buka di tab yang sama sebagai cadangan
+      window.location.href = waUrl;
+    }
+    setIsSosOpen(false);
+  };
+
+  // Catat status SOS + lokasi terakhir ke database (berjalan di background)
+  const markSosActive = async () => {
+    if (!myRsvp) return;
+
+    const payload = { sos_active: true, last_seen_at: new Date().toISOString() };
+    if (hasGpsFix) {
+      payload.latitude = gpsCoords.lat;
+      payload.longitude = gpsCoords.lng;
+    }
+    setMyRsvp(prev => (prev ? { ...prev, sos_active: true } : prev));
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase
+        .from('participants')
+        .update(payload)
+        .eq('id', myRsvp.id);
+      if (error) console.error('Gagal mengaktifkan SOS di DB:', error.message);
+    } else {
+      const updatedList = participants.map(p => p.id === myRsvp.id ? { ...p, ...payload } : p);
+      setParticipants(updatedList);
+      localStorage.setItem('kr_participants', JSON.stringify(updatedList));
+    }
+  };
+
+  // Verifikasi ulang ke server bahwa user yang login benar-benar admin (allowlist)
+  const ensureAdminSession = async () => {
+    if (!isSupabaseConfigured) return isAdminLoggedIn;
+    const { data: { session } } = await supabase.auth.getSession();
+    const { isAdmin } = session ? await checkIsAdmin() : { isAdmin: false };
+    if (!isAdmin) {
+      alert('Akses Ditolak: akun Anda tidak terverifikasi sebagai Admin di server.');
+      setIsAdminLoggedIn(false);
+    }
+    return isAdmin;
   };
 
   // --- SAVE EVENT DETAILS (ADMIN ACTION) ---
   const handleSaveEventDetails = async (e) => {
     e.preventDefault();
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     setSettingsError('');
     setLoading(true);
 
@@ -1309,6 +1492,28 @@ function App() {
 
     const { lat, lng } = parsedDestCoords;
 
+    const hasInvalidWa = [editRoadCaptainWa, editMekanikWa, editSweeperWa]
+      .some(v => v.trim() && normalizeWa(v).length < 10);
+    if (hasInvalidWa) {
+      setSettingsError('Nomor WhatsApp kontak tidak valid. Gunakan format 08xx atau 628xx.');
+      setLoading(false);
+      return;
+    }
+
+    const contactsPayload = {
+      ...(eventDetails.contacts || {}),
+      road_captain: { name: editRoadCaptain.trim(), whatsapp: normalizeWa(editRoadCaptainWa) },
+      mekanik: { name: editMekanikName.trim(), whatsapp: normalizeWa(editMekanikWa) },
+      sweeper: { name: editSweeperName.trim(), whatsapp: normalizeWa(editSweeperWa) },
+      event_end_date: editEventDateEnd
+    };
+
+    const parsedRules = editRulesText
+      .split('\n')
+      .map(r => r.trim())
+      .filter(Boolean);
+    const rulesToSave = parsedRules.length > 0 ? parsedRules : (eventDetails.rules_text || INITIAL_EVENT.rules_text);
+
     if (isSupabaseConfigured) {
       try {
         const { error } = await supabase
@@ -1319,14 +1524,11 @@ function App() {
             meeting_point: editMeetingPoint.trim(),
             road_captain: editRoadCaptain.trim(),
             sweeper: editSweeper.trim(),
+            rules_text: rulesToSave,
             map_embed_url: editMapUrl.trim(),
             map_destination_lat: lat,
             map_destination_lng: lng,
-            contacts: {
-              mekanik: { name: editMekanikName.trim(), whatsapp: editMekanikWa.trim() },
-              sweeper: { name: editSweeperName.trim(), whatsapp: editSweeperWa.trim() },
-              event_end_date: editEventDateEnd
-            }
+            contacts: contactsPayload
           })
           .eq('id', eventDetails.id);
 
@@ -1348,14 +1550,11 @@ function App() {
         meeting_point: editMeetingPoint.trim(),
         road_captain: editRoadCaptain.trim(),
         sweeper: editSweeper.trim(),
+        rules_text: rulesToSave,
         map_embed_url: editMapUrl.trim(),
         map_destination_lat: lat,
         map_destination_lng: lng,
-        contacts: {
-          mekanik: { name: editMekanikName.trim(), whatsapp: editMekanikWa.trim() },
-          sweeper: { name: editSweeperName.trim(), whatsapp: editSweeperWa.trim() },
-          event_end_date: editEventDateEnd
-        }
+        contacts: contactsPayload
       };
       setEventDetails(updatedEvent);
       localStorage.setItem('kr_eventDetails', JSON.stringify(updatedEvent));
@@ -1367,14 +1566,7 @@ function App() {
   // --- ADD CHECKPOINT (ADMIN ACTION) ---
   const handleAddCheckpoint = async (e) => {
     e.preventDefault();
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     setCheckpointError('');
 
     if (!newCpName.trim() || !newCpGmapsInput.trim()) {
@@ -1442,14 +1634,7 @@ function App() {
 
   // --- DELETE CHECKPOINT (ADMIN ACTION) ---
   const handleDeleteCheckpoint = async (id) => {
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     const confirmDel = window.confirm('Apakah Anda yakin ingin menghapus checkpoint ini?');
     if (!confirmDel) return;
 
@@ -1482,14 +1667,7 @@ function App() {
   // --- ADD RUNDOWN (ADMIN ACTION) ---
   const handleAddRundown = async (e) => {
     e.preventDefault();
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     setRundownError('');
 
     if (!newRdTime.trim() || !newRdTitle.trim() || !newRdDesc.trim()) {
@@ -1543,14 +1721,7 @@ function App() {
 
   // --- DELETE RUNDOWN (ADMIN ACTION) ---
   const handleDeleteRundown = async (id) => {
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     const confirmDel = window.confirm('Apakah Anda yakin ingin menghapus item rundown ini?');
     if (!confirmDel) return;
 
@@ -1590,14 +1761,7 @@ function App() {
   // --- SAVE EDIT RUNDOWN (ADMIN ACTION) ---
   const handleSaveEditRundown = async (e) => {
     e.preventDefault();
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     setRundownError('');
 
     if (!editRdTime.trim() || !editRdTitle.trim() || !editRdDesc.trim()) {
@@ -1664,8 +1828,17 @@ function App() {
         if (error) {
           setAdminLoginError('Login gagal: Sandi/Email salah atau akun admin belum dibuat.');
         } else {
-          setIsAdminLoggedIn(true);
-          setAdminPassword('');
+          const { isAdmin, error: adminError } = await checkIsAdmin();
+          if (isAdmin) {
+            setIsAdminLoggedIn(true);
+            setAdminPassword('');
+          } else {
+            await supabase.auth.signOut();
+            setIsAdminLoggedIn(false);
+            setAdminLoginError(adminError
+              ? 'Verifikasi admin gagal. Pastikan migrasi database (migrations/20261014_security_finance.sql) sudah dijalankan.'
+              : 'Akun ini tidak terdaftar sebagai admin. Minta pengelola menambahkan email Anda ke daftar admin.');
+          }
         }
       } catch (err) {
         console.error(err);
@@ -1693,14 +1866,7 @@ function App() {
   };
 
   const handleResetData = async () => {
-    if (isSupabaseConfigured) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        alert('Akses Ditolak: Anda tidak terautentikasi sebagai Admin di server.');
-        setIsAdminLoggedIn(false);
-        return;
-      }
-    }
+    if (!(await ensureAdminSession())) return;
     const confirmReset = window.confirm('Apakah Anda yakin ingin menyetel ulang semua data?');
     if (!confirmReset) return;
 
@@ -1737,8 +1903,17 @@ function App() {
   };
 
   // --- FINANCIAL CALCULATIONS & HANDLERS ---
-  const feePerPerson = financeConfig.fee_per_person || 100000;
-  const totalCollectedKas = participants.reduce((acc, p) => {
+  const feePerPerson = Number(financeConfig.fee_per_person) || 0;
+  const treasurerWa = normalizeWa(financeConfig.treasurer_whatsapp);
+  const isPaymentConfigured = Boolean(financeConfig.account_number || financeConfig.qris_url);
+
+  const paidParticipants = participants.filter(p => Boolean(p.is_paid));
+  const totalCollectedKas = paidParticipants.reduce((acc, p) => {
+    const multiplier = p.ride_status === 'boncengan' ? 2 : 1;
+    return acc + (feePerPerson * multiplier);
+  }, 0);
+
+  const potentialKas = participants.reduce((acc, p) => {
     const multiplier = p.ride_status === 'boncengan' ? 2 : 1;
     return acc + (feePerPerson * multiplier);
   }, 0);
@@ -1749,7 +1924,36 @@ function App() {
   const myMultiplier = myRsvp ? (myRsvp.ride_status === 'boncengan' ? 2 : 1) : 1;
   const myBillAmount = feePerPerson * myMultiplier;
 
+  const handleTogglePaymentStatus = async (participant) => {
+    if (!(await ensureAdminSession())) return;
+    const newStatus = !participant.is_paid;
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from('participants')
+          .update({ is_paid: newStatus })
+          .eq('id', participant.id);
+        if (error) throw error;
+      } catch (err) {
+        alert('Gagal mengubah status pembayaran: ' + (err.message || err));
+        return;
+      }
+    }
+    setParticipants(prev => prev.map(p => p.id === participant.id ? { ...p, is_paid: newStatus } : p));
+    if (myRsvp && myRsvp.id === participant.id) {
+      setMyRsvp(prev => prev ? { ...prev, is_paid: newStatus } : prev);
+    }
+    if (!isSupabaseConfigured) {
+      const updated = participants.map(p => p.id === participant.id ? { ...p, is_paid: newStatus } : p);
+      localStorage.setItem('kr_participants', JSON.stringify(updated));
+    }
+  };
+
   const handleCopyBankAccount = () => {
+    if (!financeConfig.account_number) {
+      setIsQrisModalOpen(true);
+      return;
+    }
     if (navigator.clipboard) {
       navigator.clipboard.writeText(financeConfig.account_number);
       setCopiedBank(true);
@@ -1765,7 +1969,13 @@ function App() {
       setExpenseError('Judul dan Nominal pengeluaran wajib diisi.');
       return;
     }
+    if (!(parseFloat(newExpAmount) > 0)) {
+      setExpenseError('Nominal pengeluaran harus lebih dari 0.');
+      return;
+    }
+    if (!(await ensureAdminSession())) return;
     setExpenseError('');
+    setLoading(true);
 
     const newExpenseObj = {
       id: isSupabaseConfigured ? undefined : `exp-${Date.now()}`,
@@ -1797,6 +2007,7 @@ function App() {
       } catch (err) {
         console.error('Error adding expense to Supabase:', err);
         alert('Gagal menyimpan pengeluaran ke database: ' + err.message);
+        setLoading(false);
         return;
       }
     } else {
@@ -1808,11 +2019,13 @@ function App() {
     setNewExpTitle('');
     setNewExpAmount('');
     setNewExpSpentBy('');
+    setLoading(false);
     alert('Pengeluaran berhasil dicatat!');
   };
 
   const handleDeleteExpense = async (expId) => {
     if (!confirm('Yakin ingin menghapus catatan pengeluaran ini?')) return;
+    if (!(await ensureAdminSession())) return;
 
     if (isSupabaseConfigured) {
       try {
@@ -1835,24 +2048,85 @@ function App() {
     }
   };
 
-  const handleSaveFinanceConfig = (e) => {
+  const handleSaveFinanceConfig = async (e) => {
     e.preventDefault();
+    if (!(await ensureAdminSession())) return;
+
+    const qrisUrl = editQrisUrl.trim();
+    if (qrisUrl && !/^https?:\/\//i.test(qrisUrl)) {
+      alert('URL gambar QRIS harus diawali http:// atau https://');
+      return;
+    }
+    const treasurerNumber = normalizeWa(editTreasurerWa);
+    if (editTreasurerWa.trim() && treasurerNumber.length < 10) {
+      alert('Nomor WhatsApp Bendahara tidak valid. Gunakan format 08xx atau 628xx.');
+      return;
+    }
+
+    const fee = parseFloat(editFeePerPerson);
     const updatedConfig = {
-      fee_per_person: editFeePerPerson ? parseFloat(editFeePerPerson) : financeConfig.fee_per_person,
-      bank_name: editBankName.trim() || financeConfig.bank_name,
-      account_number: editAccountNumber.trim() || financeConfig.account_number,
-      account_owner: editAccountOwner.trim() || financeConfig.account_owner,
-      qris_url: editQrisUrl.trim() || financeConfig.qris_url
+      fee_per_person: fee > 0 ? fee : 0,
+      bank_name: editBankName.trim(),
+      account_number: editAccountNumber.trim(),
+      account_owner: editAccountOwner.trim(),
+      qris_url: qrisUrl,
+      treasurer_whatsapp: treasurerNumber
     };
-    setFinanceConfig(updatedConfig);
-    localStorage.setItem('kr_financeConfig', JSON.stringify(updatedConfig));
-    alert('Pengaturan Kas & Rekening berhasil diperbarui!');
+
+    if (isSupabaseConfigured) {
+      setLoading(true);
+      try {
+        // Disimpan di database agar semua peserta melihat info pembayaran yang sama
+        const { data, error } = await supabase
+          .from('events')
+          .update({ finance_config: updatedConfig })
+          .eq('id', eventDetails.id)
+          .select('id');
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error('Database menolak perubahan (akun bukan admin terdaftar).');
+        }
+        setFinanceConfig(updatedConfig);
+        alert('Pengaturan Kas & Rekening berhasil disimpan!');
+      } catch (err) {
+        console.error(err);
+        alert(`Gagal menyimpan pengaturan kas: ${err.message || err}\n\nPastikan migrasi database sudah dijalankan.`);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setFinanceConfig(updatedConfig);
+      localStorage.setItem('kr_financeConfig', JSON.stringify(updatedConfig));
+      alert('Pengaturan Kas & Rekening berhasil diperbarui (Simulasi Lokal)!');
+    }
   };
 
   const setMockLocation = (lat, lng, name) => {
     setGpsCoords({ lat, lng });
     alert(`Lokasi simulasi diset ke: ${name}`);
   };
+
+  // Kontak pengurus konvoi (diatur admin di Pengaturan Acara)
+  const contactsData = eventDetails.contacts || INITIAL_EVENT.contacts;
+  const roadCaptainWa = normalizeWa(contactsData?.road_captain?.whatsapp);
+  const sweeperWa = normalizeWa(contactsData?.sweeper?.whatsapp);
+
+  const renderContactButton = (waNumber) => (
+    waNumber ? (
+      <a
+        href={`https://wa.me/${waNumber}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn"
+        style={{ backgroundColor: '#25D366', color: '#fff', border: 'none', minHeight: '36px', height: '36px', padding: '0 8px', fontSize: '0.8rem', width: 'auto', display: 'flex', alignItems: 'center' }}
+      >
+        <WhatsappIcon style={{ width: '16px', marginRight: '6px' }} /> Hubungi
+      </a>
+    ) : (
+      <span className="text-muted-desc" style={{ fontSize: '0.75rem' }}>WA belum diatur panitia</span>
+    )
+  );
 
   const renderManifestTable = () => (
     <div className="admin-table-container">
@@ -1862,6 +2136,7 @@ function App() {
             <th>Nama</th>
             <th>Motor</th>
             <th>Kelayakan</th>
+            <th>Iuran</th>
             {checkpointsList.map((cp, idx) => (
               <th key={cp.id}>Check-in CP {idx + 1}</th>
             ))}
@@ -1888,6 +2163,29 @@ function App() {
                 <span className={`badge ${p.bike_ready ? 'badge-success' : 'badge-warning'}`} style={{ textTransform: 'none', padding: '2px 6px', fontSize: '0.7rem' }}>
                   {p.bike_ready ? '✔ Ready to Ride' : '✘ Belum Siap'}
                 </span>
+              </td>
+              <td>
+                {isAdminLoggedIn ? (
+                  <button
+                    onClick={() => handleTogglePaymentStatus(p)}
+                    className={`badge ${p.is_paid ? 'badge-success' : 'badge-warning'}`}
+                    style={{
+                      cursor: 'pointer',
+                      border: 'none',
+                      textTransform: 'none',
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: '600'
+                    }}
+                    title="Klik untuk mengubah status pembayaran peserta"
+                  >
+                    {p.is_paid ? '✔ Lunas' : '⏳ Belum'}
+                  </button>
+                ) : (
+                  <span className={`badge ${p.is_paid ? 'badge-success' : 'badge-secondary'}`} style={{ textTransform: 'none', padding: '2px 6px', fontSize: '0.7rem' }}>
+                    {p.is_paid ? '✔ Lunas' : 'Belum'}
+                  </span>
+                )}
               </td>
               {checkpointsList.map((cp) => {
                 const checkinTime = p.check_ins && p.check_ins[cp.id];
@@ -1929,7 +2227,7 @@ function App() {
     ctx.restore();
   };
 
-  const generateBadgeCanvas = async (variant = 'story') => {
+  const generateBadgeCanvas = useCallback(async (variant = 'story') => {
     return new Promise((resolve) => {
       const isStory = variant === 'story';
       const width = isStory ? 1080 : 1000;
@@ -1940,8 +2238,8 @@ function App() {
       canvas.height = height;
       const ctx = canvas.getContext('2d');
 
-      const completedCpCount = Object.keys(myCheckIns).length;
-      const totalCpCount = checkpointsList.length || 2;
+      const completedCpCount = checkpointsList.filter(cp => !!myCheckIns[cp.id]).length;
+      const totalCpCount = checkpointsList.length;
       const isFullFinisher = completedCpCount >= totalCpCount && totalCpCount > 0;
 
       if (isStory) {
@@ -2116,7 +2414,7 @@ function App() {
 
           ctx.fillStyle = '#cbd5e1';
           ctx.font = '700 28px sans-serif';
-          ctx.fillText(`Tanggal: ${eventDetails?.event_date || '18 Juli 2026'}`, width / 2, 1540);
+          ctx.fillText(`Tanggal: ${formatDisplayDate(eventDetails?.event_date) || '18 Juli 2026'}`, width / 2, 1540);
 
           // Serial Pass Footer
           fillRoundRect(ctx, 90, 1610, width - 180, 130, 20, 'rgba(255, 255, 255, 0.05)');
@@ -2211,7 +2509,8 @@ function App() {
         // Route Summary
         ctx.fillStyle = '#cbd5e1';
         ctx.font = '600 28px sans-serif';
-        ctx.fillText('BANDUNG RIDEOUT • 2026', cx, cy + 200);
+        const dynamicStickerTitle = `${(eventDetails?.name || 'TOURING').toUpperCase().slice(0, 24)} • ${new Date(eventDetails?.event_date || Date.now()).getFullYear()}`;
+        ctx.fillText(dynamicStickerTitle, cx, cy + 200);
 
         // Checkpoint Stamp
         ctx.fillStyle = '#94a3b8';
@@ -2226,7 +2525,7 @@ function App() {
         resolve(canvas.toDataURL('image/png'));
       }
     });
-  };
+  }, [myRsvp, myCheckIns, checkpointsList, eventDetails]);
 
   useEffect(() => {
     if (isBadgeModalOpen && myRsvp) {
@@ -2236,7 +2535,7 @@ function App() {
         setIsGeneratingBadge(false);
       });
     }
-  }, [isBadgeModalOpen, badgeVariant, myRsvp, myCheckIns, checkpointsList, eventDetails]);
+  }, [isBadgeModalOpen, badgeVariant, myRsvp, generateBadgeCanvas]);
 
   const handleDownloadBadge = async () => {
     try {
@@ -2388,6 +2687,89 @@ function App() {
           </div>
         )}
 
+        {/* Global Floating Broadcast SOS Warning for all convoy members */}
+        {activeSosRiders.length > 0 && (
+          <div 
+            className="card"
+            style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              border: '2px solid var(--danger)',
+              padding: '14px 16px',
+              borderRadius: 'var(--radius-lg)',
+              marginBottom: '16px',
+              textAlign: 'left',
+              animation: 'pulse-glow 1.5s infinite',
+              boxShadow: '0 4px 16px rgba(239, 68, 68, 0.25)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)', fontWeight: '800', fontSize: '0.95rem' }}>
+                <ShieldAlert style={{ width: '20px', height: '20px', flexShrink: 0 }} />
+                <span>🚨 PERINGATAN DARURAT: {activeSosRiders.length} RIDER AKTIFKAN SOS!</span>
+              </div>
+              {isAdminLoggedIn && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { setActiveTab('admin'); setAdminSubTab('sos'); }}
+                  style={{ width: 'auto', padding: '4px 10px', fontSize: '0.75rem', background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                >
+                  Buka Radar Pantau SOS
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {activeSosRiders.map((rider) => (
+                <div 
+                  key={rider.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                    background: 'var(--bg-surface-elevated)',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)'
+                  }}
+                >
+                  <div>
+                    <strong style={{ fontSize: '0.85rem' }}>{rider.name}</strong>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      Motor: {rider.motor_type} {rider.latitude && rider.longitude ? `• GPS: ${rider.latitude.toFixed(4)}, ${rider.longitude.toFixed(4)}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {rider.whatsapp && (
+                      <a
+                        href={`https://wa.me/${normalizeWa(rider.whatsapp)}?text=${encodeURIComponent(`Halo ${rider.name}, kami melihat sinyal darurat SOS kamu di aplikasi KumpulRoda. Bagaimana kondisimu saat ini?`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn"
+                        style={{ backgroundColor: '#25D366', color: '#fff', border: 'none', padding: '4px 8px', fontSize: '0.75rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', width: 'auto', minHeight: '30px' }}
+                      >
+                        <Phone style={{ width: '13px' }} /> WA Rider
+                      </a>
+                    )}
+                    {rider.latitude && rider.longitude && (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${rider.latitude},${rider.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', width: 'auto', minHeight: '30px' }}
+                      >
+                        <MapPin style={{ width: '13px' }} /> Peta
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* --- TAB 1: INFO HUB (DASHBOARD) --- */}
         {activeTab === 'dashboard' && (
           <div>
@@ -2414,9 +2796,7 @@ function App() {
                       </span>
                     ) : (
                       <span>
-                        {isNaN(Date.parse(eventDetails.event_date)) 
-                          ? eventDetails.event_date 
-                          : new Date(eventDetails.event_date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        {formatDisplayDate(eventDetails.event_date)}
                       </span>
                     )}
                   </div>
@@ -2440,16 +2820,12 @@ function App() {
                 <div style={{ background: 'var(--bg-surface-elevated)', padding: '12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                   <span className="text-muted-desc" style={{ fontWeight: '600' }}>Road Captain</span>
                   <div style={{ fontWeight: '700', fontSize: '0.9rem', margin: '4px 0 8px 0' }}>{eventDetails.road_captain}</div>
-                  <a href={`https://wa.me/6281234567890`} target="_blank" className="btn" style={{ backgroundColor: '#25D366', color: '#fff', border: 'none', minHeight: '36px', height: '36px', padding: '0 8px', fontSize: '0.8rem', width: 'auto', display: 'flex', alignItems: 'center' }}>
-                    <WhatsappIcon style={{ width: '16px', marginRight: '6px' }} /> Hubungi
-                  </a>
+                  {renderContactButton(roadCaptainWa)}
                 </div>
                 <div style={{ background: 'var(--bg-surface-elevated)', padding: '12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                   <span className="text-muted-desc" style={{ fontWeight: '600' }}>Sweeper Utama</span>
                   <div style={{ fontWeight: '700', fontSize: '0.9rem', margin: '4px 0 8px 0' }}>{eventDetails.sweeper}</div>
-                  <a href={`https://wa.me/6281298765432`} target="_blank" className="btn" style={{ backgroundColor: '#25D366', color: '#fff', border: 'none', minHeight: '36px', height: '36px', padding: '0 8px', fontSize: '0.8rem', width: 'auto', display: 'flex', alignItems: 'center' }}>
-                    <WhatsappIcon style={{ width: '16px', marginRight: '6px' }} /> Hubungi
-                  </a>
+                  {renderContactButton(sweeperWa)}
                 </div>
               </div>
             </div>
@@ -2461,7 +2837,7 @@ function App() {
               </h2>
               <div className="timeline">
                 {rundownList.map((item, index) => (
-                  <div className={`timeline-item ${index === 0 ? 'active' : ''}`} key={index}>
+                  <div className={`timeline-item ${index === 0 ? 'active' : ''}`} key={item.id || index}>
                     <div className="timeline-node"></div>
                     <div className="timeline-content">
                       <div className="timeline-time">{item.time}</div>
@@ -2737,7 +3113,7 @@ function App() {
             <a 
               href={getNavigationUrl()}
               target="_blank" 
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="btn btn-primary"
             >
               <Navigation /> MULAI NAVIGASI GOOGLE MAPS
@@ -2777,13 +3153,15 @@ function App() {
             </div>
 
             {/* RSVP Form / User Card */}
-            {!myRsvp ? (
+            {(!myRsvp || isEditingRsvp) ? (
               <div className="card">
                 <h2 className="card-title" style={{ color: 'var(--primary)' }}>
-                  Pendaftaran RSVP
+                  {isEditingRsvp ? 'Ubah Data RSVP' : 'Pendaftaran RSVP'}
                 </h2>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', textAlign: 'left' }}>
-                  Isi data singkat berikut untuk mendaftar. Tanpa buat akun, instan, langsung terdaftar di sistem.
+                  {isEditingRsvp 
+                    ? 'Perbarui tipe motor atau status boncengan Anda. Data check-in dan checklist akan tetap tersimpan aman.'
+                    : 'Isi data singkat berikut untuk mendaftar. Tanpa buat akun, instan, langsung terdaftar di sistem.'}
                 </p>
 
                 {formError && (
@@ -2880,8 +3258,22 @@ function App() {
                   </div>
 
                   <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }} disabled={loading}>
-                    {loading ? 'MEMPROSES...' : 'DAFTAR SEKARANG'}
+                    {loading ? 'MEMPROSES...' : (isEditingRsvp ? 'SIMPAN PERUBAHAN' : 'DAFTAR SEKARANG')}
                   </button>
+                  {isEditingRsvp && (
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ marginTop: '8px' }} 
+                      disabled={loading}
+                      onClick={() => {
+                        setIsEditingRsvp(false);
+                        setFormError('');
+                      }}
+                    >
+                      Batal Ubah
+                    </button>
+                  )}
                 </form>
               </div>
             ) : (
@@ -2921,6 +3313,24 @@ function App() {
                     style={{ background: 'linear-gradient(135deg, #f97316 0%, #eab308 100%)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                   >
                     <Trophy style={{ width: '18px' }} /> Cetak Badge & E-Sticker Finisher
+                  </button>
+
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={() => {
+                      if (!myRsvp) return;
+                      setRsvpName(myRsvp.name || '');
+                      setRsvpWa(myRsvp.whatsapp || '');
+                      setRsvpMotor(myRsvp.motor_type || '');
+                      setRsvpStatus(myRsvp.ride_status || 'solo');
+                      setRsvpAvatarPreview(myRsvp.avatar_url || null);
+                      setRsvpAvatarFile(null);
+                      setFormError('');
+                      setIsEditingRsvp(true);
+                    }}
+                    disabled={loading}
+                  >
+                    Ubah Data RSVP (Nama / Motor / Boncengan)
                   </button>
 
                   {!myRsvp.bike_ready ? (
@@ -3070,7 +3480,7 @@ function App() {
               <MapPin style={{ color: 'var(--primary)' }} /> Absensi Checkpoint (Geo-fencing)
             </h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', textAlign: 'left' }}>
-              Absensi checkpoint menggunakan sensor GPS HP Anda. Anda hanya dapat menekan tombol check-in jika berada dalam <strong>radius maksimal 200 meter</strong> dari lokasi checkpoint resmi.
+              Absensi checkpoint menggunakan sensor GPS HP Anda. Anda hanya dapat menekan tombol check-in jika berada dalam <strong>radius yang ditentukan panitia</strong> dari lokasi checkpoint resmi.
             </p>
 
             {!myRsvp ? (
@@ -3092,9 +3502,9 @@ function App() {
                         <Award style={{ width: '12px' }} /> Badge Rider
                       </span>
                       <h4 style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-primary)' }}>
-                        {Object.keys(myCheckIns).length >= checkpointsList.length && checkpointsList.length > 0
+                        {checkpointsList.length > 0 && checkpointsList.filter(cp => !!myCheckIns[cp.id]).length >= checkpointsList.length
                           ? '🎉 Seluruh Checkpoint Tuntas! Anda Official Finisher'
-                          : `Status Checkpoint: ${Object.keys(myCheckIns).length} / ${checkpointsList.length} Tuntas`}
+                          : `Status Checkpoint: ${checkpointsList.filter(cp => !!myCheckIns[cp.id]).length} / ${checkpointsList.length} Tuntas`}
                       </h4>
                     </div>
                     <button 
@@ -3201,7 +3611,7 @@ function App() {
                     checkpoint.latitude,
                     checkpoint.longitude
                   );
-                  const inRadius = distanceMeters <= checkpoint.radius_m;
+                  const inRadius = hasGpsFix && distanceMeters <= checkpoint.radius_m;
                   const isCheckedIn = !!myCheckIns[checkpoint.id];
 
                   return (
@@ -3234,6 +3644,7 @@ function App() {
                             {distanceMeters > 1000 
                               ? `${(distanceMeters / 1000).toFixed(2)} km` 
                               : `${Math.round(distanceMeters)} meter`}
+                            {!hasGpsFix && ' (menunggu GPS)'}
                           </strong>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -3260,7 +3671,9 @@ function App() {
                       
                       {!isCheckedIn && !inRadius && (
                         <p className="text-muted-desc" style={{ marginTop: '8px', textAlign: 'center', color: 'var(--danger)' }}>
-                          *Anda harus berada kurang dari {checkpoint.radius_m}m dari titik checkpoint.
+                          {hasGpsFix
+                            ? `*Anda harus berada kurang dari ${checkpoint.radius_m}m dari titik checkpoint.`
+                            : '*Menunggu sinyal GPS HP Anda. Pastikan izin lokasi sudah diaktifkan.'}
                         </p>
                       )}
                     </div>
@@ -3300,13 +3713,13 @@ function App() {
               {/* Total Terkumpul */}
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <DollarSign style={{ width: '14px', color: 'var(--success)' }} /> Kas Terkumpul
+                  <DollarSign style={{ width: '14px', color: 'var(--success)' }} /> Iuran Terkumpul (Lunas)
                 </div>
                 <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--success)', marginTop: '4px' }}>
                   Rp {totalCollectedKas.toLocaleString('id-ID')}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  {participants.length} Peserta Terdaftar
+                  {paidParticipants.length}/{participants.length} lunas • Potensi: Rp {potentialKas.toLocaleString('id-ID')}
                 </div>
               </div>
 
@@ -3344,17 +3757,22 @@ function App() {
                   <CreditCard style={{ width: '18px' }} /> Kalkulator Tagihan Saya (Split Bill)
                 </h3>
                 <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>
-                  Rp {feePerPerson.toLocaleString('id-ID')} / pax
+                  {feePerPerson > 0 ? `Rp ${feePerPerson.toLocaleString('id-ID')} / pax` : 'Iuran belum ditetapkan'}
                 </span>
               </div>
 
               {myRsvp ? (
                 <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Nama: <strong style={{ color: 'var(--text-primary)' }}>{myRsvp.name}</strong> ({myRsvp.ride_status === 'boncengan' ? 'Berboncengan - 2 Pax' : 'Solo Rider - 1 Pax'})
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Nama: <strong style={{ color: 'var(--text-primary)' }}>{myRsvp.name}</strong> ({myRsvp.ride_status === 'boncengan' ? 'Berboncengan - 2 Pax' : 'Solo Rider - 1 Pax'})
+                    </div>
+                    <span className={`badge ${myRsvp.is_paid ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.72rem' }}>
+                      {myRsvp.is_paid ? '✔ IURAN LUNAS' : '⏳ BELUM LUNAS'}
+                    </span>
                   </div>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--primary)', margin: '8px 0' }}>
-                    Total Tagihan: Rp {myBillAmount.toLocaleString('id-ID')}
+                    {feePerPerson > 0 ? `Total Tagihan: Rp ${myBillAmount.toLocaleString('id-ID')}` : 'Nominal iuran belum ditetapkan panitia'}
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
                     *Nominal iuran mencakup makan siang bersama, retribusi tempat wisata, dan dana kas operasional darurat konvoi.
@@ -3366,14 +3784,20 @@ function App() {
                 </div>
               )}
 
-              {/* Payment Methods */}
+              {/* Payment Methods (hanya tampil jika panitia sudah mengisi info pembayaran) */}
+              {!isPaymentConfigured && (
+                <div className="badge badge-warning" style={{ display: 'flex', width: '100%', padding: '10px', textTransform: 'none', gap: '6px', alignItems: 'center', borderRadius: 'var(--radius-sm)' }}>
+                  <AlertTriangle style={{ width: '16px', flexShrink: 0 }} /> Info rekening / QRIS belum diatur panitia. Jangan transfer sebelum ada info resmi.
+                </div>
+              )}
+              {isPaymentConfigured && (
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }}>
                 <button 
                   className="btn btn-primary" 
                   onClick={() => setIsQrisModalOpen(true)}
                   style={{ flex: 1, minWidth: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem' }}
                 >
-                  <QrCode style={{ width: '16px' }} /> Bayar via QRIS
+                  <QrCode style={{ width: '16px' }} /> {financeConfig.qris_url ? 'Bayar via QRIS' : 'Info Pembayaran'}
                 </button>
                 <button 
                   className="btn btn-secondary" 
@@ -3384,6 +3808,7 @@ function App() {
                   {copiedBank ? 'No. Rek Tersalin!' : 'Salin Rekening Bank'}
                 </button>
               </div>
+              )}
             </div>
 
             {/* Rincian Transaksi Pengeluaran (Expense Ledger Table) */}
@@ -3834,6 +4259,15 @@ function App() {
                               value={editRoadCaptain}
                               onChange={(e) => setEditRoadCaptain(e.target.value)}
                               disabled={loading}
+                              style={{ marginBottom: '8px' }}
+                            />
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="WhatsApp RC (ex: 62812...)"
+                              value={editRoadCaptainWa}
+                              onChange={(e) => setEditRoadCaptainWa(e.target.value)}
+                              disabled={loading}
                             />
                           </div>
                           <div className="form-group">
@@ -3927,6 +4361,22 @@ function App() {
                                 ⚠ Masukkan link Google Maps address bar atau koordinat Lat, Lng yang valid.
                               </span>
                             )}
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label className="form-label">Tata Tertib & Aturan Touring (1 aturan per baris)</label>
+                          <textarea 
+                            className="form-input" 
+                            rows={5}
+                            placeholder="Contoh:&#10;Wajib memakai helm SNI/DOT dan jaket riding.&#10;Dilarang mendahului Road Captain (RC).&#10;Jaga jarak aman 3-5 meter."
+                            value={editRulesText}
+                            onChange={(e) => setEditRulesText(e.target.value)}
+                            disabled={loading}
+                            style={{ fontFamily: 'inherit', resize: 'vertical', lineHeight: '1.4' }}
+                          />
+                          <div style={{ marginTop: '4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            *Aturan ini akan ditampilkan langsung di Tab Dashboard & Tata Tertib untuk seluruh anggota konvoi.
                           </div>
                         </div>
 
@@ -4125,7 +4575,7 @@ function App() {
                           />
                         </div>
 
-                        <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
+                        <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }} disabled={loading}>
                           <Plus style={{ width: '16px' }} /> Simpan Pengeluaran
                         </button>
                       </form>
@@ -4155,7 +4605,7 @@ function App() {
                           <input 
                             type="number" 
                             className="form-input" 
-                            placeholder={financeConfig.fee_per_person.toString()} 
+                            placeholder="Cth: 100000"
                             value={editFeePerPerson}
                             onChange={(e) => setEditFeePerPerson(e.target.value)}
                           />
@@ -4207,7 +4657,22 @@ function App() {
                           />
                         </div>
 
-                        <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '6px' }}>
+                        <div className="form-group">
+                          <label className="form-label">WhatsApp Bendahara (untuk konfirmasi transfer)</label>
+                          <input
+                            type="tel"
+                            className="form-input"
+                            placeholder="Cth: 081234567890"
+                            value={editTreasurerWa}
+                            onChange={(e) => setEditTreasurerWa(e.target.value)}
+                          />
+                        </div>
+
+                        <p className="text-muted-desc" style={{ fontSize: '0.72rem', marginBottom: '8px' }}>
+                          *Gunakan gambar QRIS resmi dari bank/e-wallet Anda (unggah gambarnya, lalu tempel URL-nya). Kosongkan kolom yang tidak dipakai.
+                        </p>
+
+                        <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '6px' }} disabled={loading}>
                           Simpan Pengaturan Rekening & QRIS
                         </button>
                       </form>
@@ -4219,7 +4684,7 @@ function App() {
                       
                       {/* Rundown List */}
                       <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {rundownList.map((item, idx) => (
+                        {rundownList.map((item) => (
                           <div 
                             key={item.id}
                             style={{ 
@@ -4424,9 +4889,22 @@ function App() {
             </div>
 
             <div className="gps-info" style={{ marginBottom: '20px', padding: '12px' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Koordinat akan dikirim:</div>
-              <strong style={{ fontSize: '0.85rem' }}>{gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}</strong>
-              {isMockGps && <div style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '4px' }}>*Menggunakan lokasi simulasi</div>}
+              {hasGpsFix ? (
+                <>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Koordinat akan dikirim:</div>
+                  <strong style={{ fontSize: '0.85rem' }}>{gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}</strong>
+                  {isMockGps && <div style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '4px' }}>*Menggunakan lokasi simulasi</div>}
+                </>
+              ) : (
+                <div style={{ fontSize: '0.8rem', color: 'var(--warning)', fontWeight: '600' }}>
+                  ⚠ Lokasi GPS belum terdeteksi ({gpsStatusText}). Pesan tetap bisa dikirim, tetapi tanpa koordinat. Aktifkan izin lokasi jika memungkinkan.
+                </div>
+              )}
+              {!myRsvp && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                  *Anda belum RSVP, jadi status SOS tidak tercatat di dashboard panitia. Pesan WhatsApp tetap terkirim.
+                </div>
+              )}
             </div>
 
             <div className="modal-actions">
@@ -4590,6 +5068,7 @@ function App() {
               Scan QRIS di bawah ini menggunakan m-Banking (BCA, Mandiri, BRI, BNI, dll) atau e-Wallet (GoPay, OVO, Dana, ShopeePay):
             </p>
 
+            {financeConfig.qris_url && (
             <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', display: 'inline-block', marginBottom: '14px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
               <img 
                 src={financeConfig.qris_url} 
@@ -4600,24 +5079,29 @@ function App() {
                 KUMPULRODA TOURING
               </div>
             </div>
+            )}
 
+            {financeConfig.account_number && (
             <div style={{ background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', padding: '10px 12px', fontSize: '0.8rem', textAlign: 'left', marginBottom: '14px', border: '1px solid var(--border-color)' }}>
               <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Transfer Bank Manual:</div>
               <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{financeConfig.bank_name}</div>
               <div style={{ color: 'var(--primary)', fontWeight: '700', fontSize: '0.95rem' }}>{financeConfig.account_number}</div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>a.n {financeConfig.account_owner}</div>
             </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <a 
-                href={`https://wa.me/${eventDetails.pic_rc_wa || '628123456789'}?text=Halo%20Bendahara,%20saya%20sudah%20transfer%20iuran%20touring%20KumpulRoda.`}
-                target="_blank"
-                rel="noreferrer"
-                className="btn btn-primary"
-                style={{ background: '#25D366', color: '#fff', borderColor: '#25D366', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              >
-                <Phone style={{ width: '16px' }} /> Konfirmasi Transfer via WhatsApp
-              </a>
+              {treasurerWa && (
+                <a
+                  href={`https://wa.me/${treasurerWa}?text=${encodeURIComponent(`Halo Bendahara, saya ${myRsvp?.name || ''} sudah transfer iuran touring ${eventDetails.name || 'KumpulRoda'}.`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                  style={{ background: '#25D366', color: '#fff', borderColor: '#25D366', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <Phone style={{ width: '16px' }} /> Konfirmasi Transfer via WhatsApp
+                </a>
+              )}
 
               <button className="btn btn-secondary" onClick={() => setIsQrisModalOpen(false)}>
                 Tutup

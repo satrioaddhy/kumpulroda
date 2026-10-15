@@ -1,6 +1,12 @@
 -- =========================================================================
 -- KUMPULRODA DATABASE SCHEMA & SEED DATA
 -- Jalankan skrip ini di SQL Editor di dashboard Supabase Anda.
+--
+-- ⚠️ PERINGATAN: FILE INI MENGHAPUS SEMUA TABEL & DATA (DROP TABLE).
+-- Hanya untuk instalasi baru. Untuk database yang sudah berjalan, gunakan
+-- file di folder migrations/.
+-- Setelah instalasi baru, WAJIB jalankan juga semua file di migrations/
+-- secara berurutan (allowlist admin, kunci buku kas, dsb).
 -- =========================================================================
 
 -- Hapus tabel lama jika ada (opsional, untuk clean setup)
